@@ -773,6 +773,30 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
             </div>
 
             <div className="mt-4 space-y-4">
+              {/* Live Sarvam Agent Inbound Phone Number Banner */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                    <PhoneCall className="w-4 h-4 text-emerald-600" />
+                    <span>Your Sarvam Agent Live Telephone Number:</span>
+                  </div>
+                  <div className="text-sm font-mono font-bold text-emerald-900 mt-0.5 tracking-wide">
+                    +91 80642 69843
+                  </div>
+                  <div className="text-[10px] text-emerald-700 mt-0.5">
+                    You can dial this number directly from your mobile phone right now to talk with your AI agent live!
+                  </div>
+                </div>
+
+                <a
+                  href="tel:+918064269843"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5 self-start sm:self-center transition"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>Call from Phone</span>
+                </a>
+              </div>
+
               {/* Carrier Connection Status Strip */}
               <div className="p-3 rounded-2xl border bg-slate-50 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -780,14 +804,12 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                   <div>
                     <div className="font-bold text-slate-800 text-[11px]">
                       Telephony Carrier:{' '}
-                      <span className={telephonyConfig?.isConfigured ? 'text-emerald-700' : 'text-slate-600'}>
-                        {telephonyConfig?.provider || 'SIMULATION'}
+                      <span className="text-emerald-700">
+                        {telephonyConfig?.provider || 'SARVAM_SAMVAAD'}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-400">
-                      {telephonyConfig?.isConfigured
-                        ? `Live PSTN cellular carrier active · Caller ID: ${telephonyConfig?.callerNumber}`
-                        : 'Web audio console active · Connect Twilio / Exotel to ring physical phones'}
+                    <div className="text-[10px] text-slate-600">
+                      Live PSTN cellular carrier active · Caller ID: +91 80642 69843 · Agent: Conversatio-f9c1c7d2-6b12
                     </div>
                   </div>
                 </div>

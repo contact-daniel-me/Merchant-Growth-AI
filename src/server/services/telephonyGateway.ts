@@ -55,7 +55,7 @@ export class TelephonyGateway {
       return {
         provider: 'SARVAM_SAMVAAD',
         isConfigured: true,
-        callerNumber: process.env.SARVAM_CALLER_NUMBER || 'Sarvam AI Agent',
+        callerNumber: process.env.SARVAM_CALLER_NUMBER || '+918064269843',
         publicUrl: process.env.APP_URL || 'https://merchants.growiota.in',
       };
     }
@@ -208,6 +208,7 @@ export class TelephonyGateway {
         const workspaceId = process.env.SARVAM_WORKSPACE_ID!;
         const appId = process.env.SARVAM_APP_ID || 'Conversatio-f9c1c7d2-6b12';
         const connectionId = process.env.SARVAM_CONNECTION_ID || '048e4c04-05-dbec92ac-b3fa';
+        const callerPhone = process.env.SARVAM_CALLER_NUMBER || '+918064269843';
 
         const body: Record<string, any> = {
           app_config: {
@@ -215,6 +216,7 @@ export class TelephonyGateway {
             app_version: 1,
             connection_config: {
               connection_id: connectionId,
+              agent_phone_number: callerPhone,
             },
           },
           user_config: {
