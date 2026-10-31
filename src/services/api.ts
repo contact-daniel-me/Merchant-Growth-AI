@@ -498,6 +498,20 @@ export const api = {
     return res.data;
   },
 
+  async getTelephonyStatus() {
+    const res = await safeFetchJson<{ provider: string; isConfigured: boolean; callerNumber: string; publicUrl: string }>('/api/telephony/status');
+    return res.data || { provider: 'SIMULATION', isConfigured: false, callerNumber: '+91 1800-PAYTM-AI', publicUrl: '' };
+  },
+
+  async makeRealTestCall(payload: { phoneNumber: string; recipientName?: string; language?: IndianLanguage; scriptText: string }) {
+    const res = await safeFetchJson<any>('/api/telephony/test-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
   // 20. Production Live Ingestion
   async ingestLiveTransaction(merchantId: string, payload: any) {
     const res = await safeFetchJson<any>(`/api/production/ingest/transaction/${merchantId}`, {

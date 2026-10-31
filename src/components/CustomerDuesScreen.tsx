@@ -26,6 +26,9 @@ import {
   ShieldCheck,
   Radio,
   Headphones,
+  Info,
+  Server,
+  ExternalLink,
 } from 'lucide-react';
 
 interface CustomerDuesScreenProps {
@@ -81,6 +84,19 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   const [callSuccessMsg, setCallSuccessMsg] = useState('');
   const [recentCalls, setRecentCalls] = useState<any[]>([]);
 
+  // Real Mobile Phone Call Modal States
+  const [isRealCallModalOpen, setIsRealCallModalOpen] = useState(false);
+  const [realCallPhone, setRealCallPhone] = useState('+91 ');
+  const [realCallName, setRealCallName] = useState('My Mobile Phone');
+  const [realCallLang, setRealCallLang] = useState<IndianLanguage>(currentLanguage);
+  const [realCallScript, setRealCallScript] = useState(
+    'नमस्ते, यह मर्चेंट बाई ग्रोआयोटा से एक वास्तविक वॉइस कॉल है। सर्वम एआई बुलबुल न्यूरल वॉइस सिस्टम सही ढंग से काम कर रहा है।'
+  );
+  const [isDialingRealCall, setIsDialingRealCall] = useState(false);
+  const [realCallResponse, setRealCallResponse] = useState<any>(null);
+  const [telephonyConfig, setTelephonyConfig] = useState<any>(null);
+  const [showCarrierSetup, setShowCarrierSetup] = useState(false);
+
   // Live Simulated Call Session
   const [activeCall, setActiveCall] = useState<ActiveLiveCall | null>(null);
   const callAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -103,9 +119,10 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   const overdueRecords = creditRecords.filter((r) => r.status === 'OVERDUE' || r.status === 'HIGH_RISK');
   const totalOverdue = overdueRecords.reduce((sum, r) => sum + r.outstandingBalance, 0);
 
-  // Load recent outbound calls
+  // Load recent outbound calls & carrier config
   useEffect(() => {
     loadCallHistory();
+    loadTelephonyStatus();
     return () => {
       if (callAudioRef.current) {
         callAudioRef.current.pause();
@@ -134,6 +151,15 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
     }
   };
 
+  const loadTelephonyStatus = async () => {
+    try {
+      const cfg = await api.getTelephonyStatus();
+      setTelephonyConfig(cfg);
+    } catch (e) {
+      console.warn('Could not load telephony status:', e);
+    }
+  };
+
   const getReminderScript = (record: CustomerCreditRecord, lang: IndianLanguage, storeName: string) => {
     switch (lang) {
       case 'hi':
@@ -143,7 +169,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
       case 'kn':
         return `ನಮಸ್ಕಾರ ${record.customerName} ಅವರೇ, ಇದು ${storeName} ವತಿಯಿಂದ ವಿನಮ್ರ ನೆನಪಿಸುವ ಕರೆ. ನಿಮ್ಮ ಖಾತೆಯಲ್ಲಿ ₹${record.outstandingBalance.toLocaleString('en-IN')} ಬಾಕಿ ಇದೆ. ದಯವಿಟ್ಟು Paytm UPI ಮೂಲಕ ಪಾವತಿಸಿ. ಧನ್ಯವಾದಗಳು.`;
       case 'te':
-        return `నమస్కారం ${record.customerName} గారు, ఇది ${storeName} నుండి చెల్లింపు రిమైండర్. మీ ఖాతాలో ₹${record.outstandingBalance.toLocaleString('en-IN')} బాకీ ఉంది. దయచేసి Paytm UPI ద్వారా చెల్లించండి. ధన్యవాదాలు.`;
+        return `నమస్కారం ${record.customerName} గారు, ఇది ${storeName} నుండి చెల్లింపు రిమైండర్. మీ ఖాతాలో ₹${record.outstandingBalance.toLocaleString('en-IN')} బాకీ ఉంది. దయచేసి Paytm UPI ద్వారా చెల్లించండి. ధನ್ಯవాదాలు.`;
       case 'en':
       default:
         return `Hello ${record.customerName}, this is a polite payment reminder from ${storeName}. An outstanding balance of ₹${record.outstandingBalance.toLocaleString('en-IN')} is pending on your store ledger. Please complete payment via Paytm UPI. Thank you.`;
@@ -275,6 +301,53 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
       alert(`Call dispatch failed: ${err.message}`);
     } finally {
       setIsDispatchingCall(false);
+    }
+  };
+
+  const handleDialRealPhone = async () => {
+    if (!realCallPhone.trim() || !realCallScript.trim()) return;
+    setIsDialingRealCall(true);
+    setRealCallResponse(null);
+
+    try {
+      const res = await api.makeRealTestCall({
+        phoneNumber: realCallPhone,
+        recipientName: realCallName,
+        language: realCallLang,
+        scriptText: realCallScript,
+      });
+
+      setRealCallResponse(res);
+      await loadCallHistory();
+
+      // Launch simulated live call console so merchant can also hear it in-browser
+      if (res?.audioBase64) {
+        setActiveCall({
+          callId: res.id,
+          customerName: realCallName,
+          customerPhone: realCallPhone,
+          outstandingBalance: 0,
+          language: realCallLang,
+          scriptText: realCallScript,
+          audioBase64: res.audioBase64,
+          status: 'IN_CALL',
+          durationSeconds: res.durationSeconds || 12,
+          elapsedSeconds: 0,
+          isMuted: false,
+        });
+
+        const audioUrl = res.audioBase64.startsWith('data:audio')
+          ? res.audioBase64
+          : `data:audio/wav;base64,${res.audioBase64}`;
+        const audio = new Audio(audioUrl);
+        callAudioRef.current = audio;
+        audio.play().catch((e) => console.warn(e));
+        audio.onended = () => setActiveCall((prev) => (prev ? { ...prev, status: 'COMPLETED' } : null));
+      }
+    } catch (err: any) {
+      alert(`Real call dispatch error: ${err.message}`);
+    } finally {
+      setIsDialingRealCall(false);
     }
   };
 
@@ -427,13 +500,24 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
             </p>
           </div>
 
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#002970] text-white hover:bg-[#001f55] text-xs font-bold shadow-xs transition cursor-pointer self-start sm:self-center"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Store Credit</span>
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+            {/* Real Phone Call Dialer Button */}
+            <button
+              onClick={() => setIsRealCallModalOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-98"
+            >
+              <Phone className="w-4 h-4 text-emerald-200" />
+              <span>Make a Real Phone Call</span>
+            </button>
+
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#002970] text-white hover:bg-[#001f55] text-xs font-bold shadow-xs transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Store Credit</span>
+            </button>
+          </div>
         </div>
 
         {callSuccessMsg && (
@@ -661,6 +745,193 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
         </div>
       )}
 
+      {/* REAL PHYSICAL MOBILE PHONE CALL DIALER MODAL */}
+      {isRealCallModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+                  <Phone className="w-5 h-5 text-emerald-100" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">
+                    Make a Real Phone Call
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Direct PSTN / Cellular Call using Sarvam AI Bulbul Neural Voice
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsRealCallModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {/* Carrier Connection Status Strip */}
+              <div className="p-3 rounded-2xl border bg-slate-50 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Server className="w-4 h-4 text-[#002970]" />
+                  <div>
+                    <div className="font-bold text-slate-800 text-[11px]">
+                      Telephony Carrier:{' '}
+                      <span className={telephonyConfig?.isConfigured ? 'text-emerald-700' : 'text-slate-600'}>
+                        {telephonyConfig?.provider || 'SIMULATION'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {telephonyConfig?.isConfigured
+                        ? `Live PSTN cellular carrier active · Caller ID: ${telephonyConfig?.callerNumber}`
+                        : 'Web audio console active · Connect Twilio / Exotel to ring physical phones'}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCarrierSetup(!showCarrierSetup)}
+                  className="px-2.5 py-1 text-[10px] font-bold text-[#002970] border border-[#002970]/30 rounded-lg hover:bg-blue-50 cursor-pointer shrink-0"
+                >
+                  {showCarrierSetup ? 'Hide Setup' : 'Carrier Setup'}
+                </button>
+              </div>
+
+              {/* Carrier Setup Accordion */}
+              {showCarrierSetup && (
+                <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl space-y-2 text-[11px] text-slate-700 animate-in fade-in">
+                  <div className="font-bold text-[#002970] flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5" />
+                    <span>How to enable real cellular phone ringing:</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    Under Indian telecom regulations (TRAI/DoT), to make an actual physical phone ring via cellular GSM, an authorized telephony gateway must be linked. Add any of the following to your <code>.env</code> file:
+                  </p>
+                  <div className="space-y-1 bg-white p-2.5 rounded-xl border border-blue-100 font-mono text-[10px] text-slate-800">
+                    <div className="font-bold text-[#002970]">Option 1: Twilio Voice</div>
+                    <div>TWILIO_ACCOUNT_SID=&quot;your_sid&quot;</div>
+                    <div>TWILIO_AUTH_TOKEN=&quot;your_token&quot;</div>
+                    <div>TWILIO_PHONE_NUMBER=&quot;+1...&quot;</div>
+                    <div className="font-bold text-[#002970] mt-1.5">Option 2: Exotel (India Gateway)</div>
+                    <div>EXOTEL_API_KEY=&quot;key&quot;</div>
+                    <div>EXOTEL_API_TOKEN=&quot;token&quot;</div>
+                    <div>EXOTEL_CALLER_ID=&quot;080...&quot;</div>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    The server automatically streams Sarvam Bulbul audio to answered calls via <code>/api/telephony/twiml/:callId</code>.
+                  </p>
+                </div>
+              )}
+
+              {/* Destination Mobile Number */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Recipient Mobile Phone Number (Include country code +91)
+                </label>
+                <input
+                  type="tel"
+                  value={realCallPhone}
+                  onChange={(e) => setRealCallPhone(e.target.value)}
+                  placeholder="+91 98450 12890"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 bg-white focus:outline-hidden focus:border-emerald-600"
+                />
+              </div>
+
+              {/* Recipient Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Recipient Contact Name
+                </label>
+                <input
+                  type="text"
+                  value={realCallName}
+                  onChange={(e) => setRealCallName(e.target.value)}
+                  placeholder="e.g. Ramesh Kumar"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-hidden focus:border-emerald-600"
+                />
+              </div>
+
+              {/* Language Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Language & Neural Voice
+                </label>
+                <select
+                  value={realCallLang}
+                  onChange={(e) => {
+                    const newLang = e.target.value as IndianLanguage;
+                    setRealCallLang(newLang);
+                    if (newLang === 'hi') {
+                      setRealCallScript('नमस्ते, यह मर्चेंट बाई ग्रोआयोटा से एक वास्तविक वॉइस कॉल है। सर्वम एआई बुलबुल न्यूरल वॉइस सिस्टम सही ढंग से काम कर रहा है।');
+                    } else if (newLang === 'ta') {
+                      setRealCallScript('வணக்கம், இது மெர்ச்சன்ட் பை குரோஐயோட்டாவின் நேரடி குரல் அழைப்பு. சர்வம் ஏஐ அமைப்பு வெற்றிகரமாக செயல்படுகிறது.');
+                    } else {
+                      setRealCallScript('Hello, this is a real AI voice call from Merchant by GrowIOTA powered by Sarvam AI Bulbul neural voice engine.');
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 font-medium cursor-pointer"
+                >
+                  <option value="en">English (India) · Speaker Priya</option>
+                  <option value="hi">हिन्दी (Hindi) · Speaker Shreya</option>
+                  <option value="ta">தமிழ் (Tamil) · Speaker Kavya</option>
+                  <option value="kn">ಕನ್ನಡ (Kannada) · Speaker Roopa</option>
+                  <option value="te">తెలుగు (Telugu) · Speaker Aditya</option>
+                </select>
+              </div>
+
+              {/* Editable Script */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Spoken Script to Synthesize and Stream
+                </label>
+                <textarea
+                  rows={3}
+                  value={realCallScript}
+                  onChange={(e) => setRealCallScript(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-sans leading-relaxed focus:bg-white focus:outline-hidden focus:border-emerald-600"
+                />
+              </div>
+
+              {realCallResponse && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-[11px] space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Call Dispatched Successfully</span>
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    Call ID: {realCallResponse.id} · Status: {realCallResponse.callStatus} · Carrier: {realCallResponse.carrier || 'Standard'}
+                  </p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRealCallModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDialRealPhone}
+                  disabled={isDialingRealCall || !realCallPhone.trim() || !realCallScript.trim()}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50 transition active:scale-98"
+                >
+                  <PhoneCall className="w-4 h-4 text-emerald-200" />
+                  <span>{isDialingRealCall ? 'Connecting Telephony...' : 'Dial Real Phone Now'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Voice Call Configuration Modal */}
       {selectedRecordForCall && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -822,9 +1093,11 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
 
               <h2 className="text-xl font-bold mt-2 text-white">{activeCall.customerName}</h2>
               <p className="text-xs text-sky-200 font-mono mt-0.5">{activeCall.customerPhone}</p>
-              <div className="text-xs text-sky-100 font-medium mt-1">
-                Outstanding Ledger: ₹{activeCall.outstandingBalance.toLocaleString('en-IN')}
-              </div>
+              {activeCall.outstandingBalance > 0 && (
+                <div className="text-xs text-sky-100 font-medium mt-1">
+                  Outstanding Ledger: ₹{activeCall.outstandingBalance.toLocaleString('en-IN')}
+                </div>
+              )}
 
               {/* Status Badge & Live Timer */}
               <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-center gap-3">

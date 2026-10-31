@@ -1,6 +1,7 @@
 import { AppDatabase } from '../../db/database.ts';
 import { TextToSpeechService } from './textToSpeech.ts';
 import { ActionService } from '../actionService.ts';
+import { TelephonyGateway } from '../telephonyGateway.ts';
 import type { IndianLanguage } from '../../../types/index.ts';
 
 export interface CustomerVoiceCallRecord {
@@ -20,6 +21,8 @@ export interface CustomerVoiceCallRecord {
   outcomeNote?: string;
   scheduledAt: string;
   executedAt?: string;
+  carrier?: string;
+  carrierCallId?: string;
 }
 
 export class OutboundCallService {
@@ -55,8 +58,8 @@ export class OutboundCallService {
   }
 
   /**
-   * Dispatches an automated voice call to a customer using Sarvam Bulbul v4 Flash
-   * Enforces explicit merchant action authorization
+   * Dispatches an automated voice call to a customer using Sarvam Bulbul neural speech
+   * Connects to live PSTN / Cellular Telephony Gateway if carrier credentials configured
    */
   public static async dispatchCustomerCall(params: {
     merchantId: string;
@@ -74,7 +77,7 @@ export class OutboundCallService {
     const callId = `CALL-${Date.now().toString().slice(-6)}`;
     const now = new Date().toISOString();
 
-    // 1. Synthesize conversational speech audio via Sarvam Bulbul v4 Flash
+    // 1. Synthesize conversational speech audio via Sarvam Bulbul
     let audioBase64: string | null = null;
     let durationSeconds = Math.max(10, Math.min(45, Math.round(scriptText.length / 14)));
 
@@ -85,9 +88,19 @@ export class OutboundCallService {
       console.warn('[OutboundCallService] Speech synthesis error:', err.message);
     }
 
-    const outcomeNote = `Automated ${callPurpose} call connected to ${recipientName} (${recipientPhone}). Recipient listened to reminder.`;
+    // 2. Trigger real phone call via Telephony Gateway
+    const dialResult = await TelephonyGateway.dialRealPhone({
+      callId,
+      recipientPhone,
+      recipientName,
+      audioBase64,
+    });
 
-    // 2. Persist Call Record
+    const outcomeNote = dialResult.carrier === 'SIMULATION'
+      ? `Automated ${callPurpose} call connected to ${recipientName} (${recipientPhone}). Sarvam Bulbul audio generated.`
+      : `Real cellular call dispatched via ${dialResult.carrier} to ${recipientName} (${recipientPhone}). Status: ${dialResult.status}. ${dialResult.message}`;
+
+    // 3. Persist Call Record
     db.prepare(`
       INSERT INTO customer_voice_calls (
         id, merchant_id, customer_id, recipient_name, recipient_phone, call_purpose,
@@ -111,7 +124,7 @@ export class OutboundCallService {
       now
     );
 
-    // 3. Update Action status to EXECUTED if linked to an action ID
+    // 4. Update Action status to EXECUTED if linked to an action ID
     if (actionId) {
       try {
         ActionService.updateActionStatus(merchantId, actionId, 'EXECUTED', 'Automated Voice Dispatcher');
@@ -120,7 +133,7 @@ export class OutboundCallService {
       }
     }
 
-    // 4. Record Audit Log for Regulatory Compliance
+    // 5. Record Audit Log for Regulatory Compliance
     try {
       db.prepare(`
         INSERT INTO audit_logs (id, merchant_id, actor, role, event_type, details, timestamp, ip_address, immutable_hash)
@@ -128,7 +141,7 @@ export class OutboundCallService {
       `).run(
         `AUD-${callId}`,
         merchantId,
-        `Customer Voice Call dispatched to ${recipientName} (${recipientPhone}) for ₹ balance reminder. Purpose: ${callPurpose}.`,
+        `Customer Voice Call dispatched to ${recipientName} (${recipientPhone}) for ₹ balance reminder. Provider: ${dialResult.carrier}.`,
         now
       );
     } catch (e: any) {
@@ -152,7 +165,8 @@ export class OutboundCallService {
       outcomeNote,
       scheduledAt: now,
       executedAt: now,
+      carrier: dialResult.carrier,
+      carrierCallId: dialResult.carrierCallId,
     };
   }
 }
-

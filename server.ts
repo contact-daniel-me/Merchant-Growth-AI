@@ -30,6 +30,7 @@ import { CustomerSegmentationService } from './src/server/services/marketing/cus
 import { PaymentLinkService } from './src/server/services/payments/paymentLinkService.ts';
 import { DailyBriefScheduler } from './src/server/services/scheduler/dailyBriefScheduler.ts';
 import { AiCostService } from './src/server/services/ai/aiCostService.ts';
+import { TelephonyGateway } from './src/server/services/telephonyGateway.ts';
 
 dotenv.config();
 
@@ -667,6 +668,75 @@ export async function createExpressApp() {
       res.json({ success: true, data: callResult });
     } catch (err: any) {
       console.error('[Outbound Call Dispatch Error]', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 16b. Telephony Carrier Gateways & Audio Streaming
+  // ----------------------------------------------------
+  app.get('/api/telephony/status', (req, res) => {
+    try {
+      const config = TelephonyGateway.getConfig();
+      res.json({ success: true, data: config });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/telephony/audio/:callId.wav', (req, res) => {
+    try {
+      const { callId } = req.params;
+      const db = AppDatabase.getDB();
+      const row = db.prepare('SELECT audio_base64 FROM customer_voice_calls WHERE id = ?').get(callId) as any;
+      if (!row || !row.audio_base64) {
+        return res.status(404).send('Audio not found');
+      }
+      const clean = row.audio_base64.replace(/^data:audio\/\w+;base64,/, '');
+      const buffer = Buffer.from(clean, 'base64');
+      res.setHeader('Content-Type', 'audio/wav');
+      res.setHeader('Content-Length', buffer.length);
+      res.send(buffer);
+    } catch (err: any) {
+      res.status(500).send('Error streaming audio');
+    }
+  });
+
+  app.all('/api/telephony/twiml/:callId', (req, res) => {
+    try {
+      const { callId } = req.params;
+      const appUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const audioUrl = `${appUrl}/api/telephony/audio/${callId}.wav`;
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Play>${audioUrl}</Play>
+</Response>`;
+      res.setHeader('Content-Type', 'text/xml');
+      res.send(twiml);
+    } catch (err: any) {
+      res.status(500).send('<Response><Hangup/></Response>');
+    }
+  });
+
+  app.post('/api/telephony/test-call', async (req, res) => {
+    try {
+      const { phoneNumber, recipientName = 'Test User', language = 'en', scriptText } = req.body;
+      if (!phoneNumber || !scriptText) {
+        return res.status(400).json({ success: false, error: 'phoneNumber and scriptText are required.' });
+      }
+
+      const sanitizedPhone = DataSanitizer.sanitizePhone(phoneNumber);
+      const call = await OutboundCallService.dispatchCustomerCall({
+        merchantId: 'mer_sharma_kirana',
+        recipientName,
+        recipientPhone: sanitizedPhone,
+        callPurpose: 'PAYMENT_REMINDER',
+        language,
+        scriptText,
+      });
+
+      res.json({ success: true, data: call });
+    } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
