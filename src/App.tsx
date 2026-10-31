@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { SimpleNavbar } from './components/SimpleNavbar.tsx';
 import { SimpleHomeScreen } from './components/SimpleHomeScreen.tsx';
 import { SimpleVoiceAssistantScreen } from './components/SimpleVoiceAssistantScreen.tsx';
@@ -296,7 +297,7 @@ export default function App() {
 
     if (base64) {
       try {
-        const audioUrl = base64.startsWith('data:audio') ? base64 : `data:audio/wav;base64,${base64}`;
+        const audioUrl = base64.startsWith('data:audio') ? base64 : `data:audio/mpeg;base64,${base64}`;
         const audio = new Audio(audioUrl);
         briefingAudioPlayerRef.current = audio;
         setIsBriefingAudioPlaying(true);
@@ -400,6 +401,7 @@ export default function App() {
 
       {/* Main Viewport Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-5 pb-16">
+        <ErrorBoundary resetKey={activeTab}>
         {activeTab === 'home' && (
           <SimpleHomeScreen
             merchant={currentMerchant}
@@ -459,11 +461,13 @@ export default function App() {
           <SimpleVoiceAssistantScreen
             merchant={currentMerchant}
             currentLanguage={currentLanguage}
-            onSelectLanguage={handleSelectLanguage}
+            creditRecords={creditRecords}
+            settlements={settlements}
             onApproveAction={handleApproveAction}
             onRejectAction={handleRejectAction}
           />
         )}
+        </ErrorBoundary>
       </main>
 
       {/* Profile & Device Diagnostics Modal */}

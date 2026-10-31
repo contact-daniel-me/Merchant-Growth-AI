@@ -96,7 +96,7 @@ export const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
 
     if (base64) {
       try {
-        const audioUrl = base64.startsWith('data:audio') ? base64 : `data:audio/wav;base64,${base64}`;
+        const audioUrl = base64.startsWith('data:audio') ? base64 : `data:audio/mpeg;base64,${base64}`;
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
         setAudioSource('sarvam');

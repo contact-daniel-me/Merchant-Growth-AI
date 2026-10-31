@@ -262,7 +262,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
       try {
         const audioUrl = audioBase64.startsWith('data:audio')
           ? audioBase64
-          : `data:audio/wav;base64,${audioBase64}`;
+          : `data:audio/mpeg;base64,${audioBase64}`;
         const audio = new Audio(audioUrl);
         audioPlayerRef.current = audio;
         setIsSpeaking(true);

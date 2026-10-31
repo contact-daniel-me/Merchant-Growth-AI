@@ -1,4 +1,7 @@
 import express from 'express';
+import { getSarvamConfig, isSarvamConfigured } from './src/server/services/sarvam/config.ts';
+import { sarvamLastErrors } from './src/server/services/sarvam/client.ts';
+import { availableProviders, generateText, geminiModel, getLastLlmErrors } from './src/server/services/ai/llmService.ts';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -522,6 +525,8 @@ export async function createExpressApp() {
         text,
         language,
         audioBase64: result.audioBase64,
+        mimeType: result.mimeType || null,
+        error: result.error || null,
       });
     } catch (err: any) {
       console.error('[Voice TTS Error]', err);
@@ -529,10 +534,36 @@ export async function createExpressApp() {
     }
   });
 
+  // Voice / AI diagnostics: shows which keys are loaded and (with ?live=1) makes one tiny real call
+  // to each provider, so it is obvious whether API calls actually work. Never returns key values.
+  app.get('/api/voice/diagnostics', async (req, res) => {
+    const sarvamCfg = getSarvamConfig();
+    const report: Record<string, any> = {
+      sarvam: {
+        keyLoaded: isSarvamConfigured(),
+        keyLength: sarvamCfg.apiKey.length,
+        sttModel: sarvamCfg.sttModel,
+        ttsModel: sarvamCfg.ttsModel,
+        chatModel: sarvamCfg.llmModel,
+        lastErrors: sarvamLastErrors,
+      },
+      gemini: { keyLoaded: Boolean(process.env.GEMINI_API_KEY?.trim()), model: geminiModel() },
+      llmProvidersInOrder: availableProviders(),
+      llmLastErrors: getLastLlmErrors(),
+    };
+    if (req.query.live === '1') {
+      const tts = await TextToSpeechService.synthesizeSpeech('Hello', 'en');
+      report.liveTts = tts.audioBase64 ? { ok: true, bytes: Math.round((tts.audioBase64.length * 3) / 4) } : { ok: false, error: tts.error };
+      const llm = await generateText({ purpose: 'diagnostics', prompt: 'Reply with the single word OK.', timeoutMs: 8000 });
+      report.liveLlm = llm ? { ok: true, provider: llm.provider, model: llm.model, latencyMs: llm.latencyMs } : { ok: false, errors: getLastLlmErrors() };
+    }
+    res.json({ success: true, data: report });
+  });
+
   // Voice Query (Full Flow: STT -> Intent & Facts -> Sarvam LLM/Deterministic -> TTS)
   app.post('/api/voice/query', async (req, res) => {
     try {
-      const { merchantId, query, language, audioBase64 } = req.body;
+      const { merchantId, query, language, audioBase64, mimeType } = req.body;
       if (!merchantId) {
         return res.status(400).json({ success: false, error: 'MerchantId is required.' });
       }
@@ -542,6 +573,7 @@ export async function createExpressApp() {
         query,
         language: language || 'en',
         audioBase64,
+        mimeType,
       });
 
       res.json({ success: true, data: result });

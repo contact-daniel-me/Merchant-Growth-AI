@@ -49,6 +49,8 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
     spokenText: string;
     actionCard?: any;
     audioBase64?: string | null;
+    /** 'gemini' | 'sarvam' when a live AI wrote the answer; 'none' for the offline template. */
+    aiProvider?: string;
   } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -250,6 +252,7 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
             spokenText: result.spokenResponseText || result.responseText,
             actionCard: result.actionCard,
             audioBase64: result.audioBase64,
+            aiProvider: result.responseSource === 'llm' ? result.aiProvider : 'none',
           });
 
           playSynthesizedAudio(result.spokenResponseText || result.responseText, result.audioBase64);
@@ -282,7 +285,7 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
       try {
         const audioUrl = audioBase64.startsWith('data:audio')
           ? audioBase64
-          : `data:audio/wav;base64,${audioBase64}`;
+          : `data:audio/mpeg;base64,${audioBase64}`;
         const audio = new Audio(audioUrl);
         audioPlayerRef.current = audio;
 
@@ -346,6 +349,7 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
           spokenText: result.spokenResponseText || result.responseText,
           actionCard: result.actionCard,
           audioBase64: result.audioBase64,
+          aiProvider: result.responseSource === 'llm' ? result.aiProvider : 'none',
         });
 
         playSynthesizedAudio(result.spokenResponseText || result.responseText, result.audioBase64);
@@ -514,6 +518,13 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
             <div className="mt-3.5 text-base sm:text-lg font-bold text-[#172B4D] leading-relaxed whitespace-pre-line">
               {lastAnswer.text}
             </div>
+            {lastAnswer.aiProvider && (
+              <p className="mt-2 text-[11px] font-medium text-slate-500" data-testid="ai-source">
+                {lastAnswer.aiProvider === 'none'
+                  ? 'Offline answer from verified data (live AI not reached)'
+                  : `Answered live by ${lastAnswer.aiProvider === 'gemini' ? 'Gemini' : 'Sarvam'} AI · numbers checked against your ledger`}
+              </p>
+            )}
 
             {/* Action Confirmation Card: Explicit On-Screen Approval */}
             {lastAnswer.actionCard && (

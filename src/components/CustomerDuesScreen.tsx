@@ -201,7 +201,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
       if (tts.success && tts.audioBase64) {
         const audioUrl = tts.audioBase64.startsWith('data:audio')
           ? tts.audioBase64
-          : `data:audio/wav;base64,${tts.audioBase64}`;
+          : `data:audio/mpeg;base64,${tts.audioBase64}`;
         const audio = new Audio(audioUrl);
         audioPreviewRef.current = audio;
         setIsPlayingAudioPreview(true);
@@ -267,7 +267,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
         if (audioBase64) {
           const audioUrl = audioBase64.startsWith('data:audio')
             ? audioBase64
-            : `data:audio/wav;base64,${audioBase64}`;
+            : `data:audio/mpeg;base64,${audioBase64}`;
           const audio = new Audio(audioUrl);
           callAudioRef.current = audio;
           audio.play().catch((err) => console.warn('Call audio autoplay blocked:', err));
@@ -354,7 +354,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
 
         const audioUrl = res.audioBase64.startsWith('data:audio')
           ? res.audioBase64
-          : `data:audio/wav;base64,${res.audioBase64}`;
+          : `data:audio/mpeg;base64,${res.audioBase64}`;
         const audio = new Audio(audioUrl);
         callAudioRef.current = audio;
         audio.play().catch((e) => console.warn(e));
@@ -431,7 +431,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
     if (call.audioBase64) {
       const audioUrl = call.audioBase64.startsWith('data:audio')
         ? call.audioBase64
-        : `data:audio/wav;base64,${call.audioBase64}`;
+        : `data:audio/mpeg;base64,${call.audioBase64}`;
       const audio = new Audio(audioUrl);
       historyAudioRef.current = audio;
       setPlayingHistoryId(call.id);
