@@ -1,6 +1,6 @@
 {
-  "name": "Paytm Merchant Intelligence",
-  "description": "AI-powered merchant business management platform with voice intelligence in Indian languages, financial reconciliation, cash flow, and growth insights.",
+  "name": "Saathi by GrowIOTA",
+  "description": "Commercial-grade multilingual AI business assistant for Paytm merchants, providing verified settlement reconciliation, customer credit (Khata), cash flow forecasting, growth analytics, and Sarvam AI voice intelligence.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

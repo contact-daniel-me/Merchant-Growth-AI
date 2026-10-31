@@ -3,39 +3,97 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { merchantDB } from './src/server/mockDb.ts';
-import { DeterministicAnalyticsEngine } from './src/server/analyticsEngine.ts';
-import { AgentOrchestrator } from './src/server/agentOrchestrator.ts';
-import { DailyBriefing, IndianLanguage } from './src/types/index.ts';
+
+import { AppDatabase } from './src/server/db/database.ts';
+import { AuthService } from './src/server/auth/authService.ts';
+import { FinancialEngine } from './src/server/services/financialEngine.ts';
+import { KhataService } from './src/server/services/khataService.ts';
+import { ActionService } from './src/server/services/actionService.ts';
+import { MonetizationService } from './src/server/services/monetizationService.ts';
+import { SarvamAgentService } from './src/server/services/sarvam/agentService.ts';
+import { PaytmClient } from './src/server/integrations/paytm/client.ts';
+import { PaytmWebhookHandler } from './src/server/integrations/paytm/webhooks.ts';
+import { IndianLanguage } from './src/types/index.ts';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function startServer() {
+export async function createExpressApp() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  app.use(express.json({ limit: '25mb' }));
 
-  app.use(express.json({ limit: '10mb' }));
+  // Initialize SQLite database schema and seed data
+  AppDatabase.getDB();
 
-  // Request logger for audit and debugging
+  // Audit and diagnostics request logger
   app.use((req, res, next) => {
     if (req.path.startsWith('/api')) {
-      console.log(`[API] ${req.method} ${req.path}`);
+      console.log(`[API ${new Date().toISOString().slice(11, 19)}] ${req.method} ${req.path}`);
     }
     next();
   });
 
   // ----------------------------------------------------
-  // API Endpoints
+  // Authentication & Session Routes
   // ----------------------------------------------------
+  app.post('/api/auth/login', (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ success: false, error: 'Username and password are required.' });
+      }
 
+      const authResult = AuthService.authenticateUser(username, password);
+      if (!authResult) {
+        return res.status(401).json({ success: false, error: 'Invalid merchant credentials.' });
+      }
+
+      res.json({ success: true, data: authResult });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
   // 1. Merchant Identity & Tenant Selection
+  // ----------------------------------------------------
   app.get('/api/merchants', (req, res) => {
     try {
-      const merchants = merchantDB.getMerchants();
-      res.json({ success: true, data: merchants });
+      const db = AppDatabase.getDB();
+      const merchants = db.prepare('SELECT * FROM merchants ORDER BY business_name ASC').all();
+      res.json({
+        success: true,
+        data: merchants.map((m: any) => ({
+          id: m.id,
+          businessName: m.business_name,
+          ownerName: m.owner_name,
+          email: m.email,
+          phone: m.phone,
+          businessCategory: m.business_category,
+          gstin: m.gstin,
+          pan: m.pan,
+          mid: m.mid,
+          terminalId: m.terminal_id,
+          primaryLanguage: m.primary_language || 'en',
+          settlementAccount: {
+            bankName: m.bank_name,
+            accountNumber: m.bank_account_number,
+            ifsc: m.bank_ifsc,
+            accountHolder: m.bank_account_holder,
+          },
+          deviceInfo: {
+            soundboxSerial: m.soundbox_serial,
+            soundboxModel: m.soundbox_model,
+            batteryLevel: m.soundbox_battery,
+            networkStatus: m.soundbox_status,
+            soundVolume: m.soundbox_volume,
+            languageAnnouncement: m.primary_language || 'en',
+          },
+          role: 'OWNER',
+        })),
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -43,30 +101,107 @@ async function startServer() {
 
   app.get('/api/merchants/:merchantId', (req, res) => {
     try {
-      const merchant = merchantDB.getMerchant(req.params.merchantId);
-      res.json({ success: true, data: merchant });
+      const db = AppDatabase.getDB();
+      const m = db.prepare('SELECT * FROM merchants WHERE id = ?').get(req.params.merchantId) as any;
+      if (!m) {
+        return res.status(404).json({ success: false, error: 'Merchant not found.' });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          id: m.id,
+          businessName: m.business_name,
+          ownerName: m.owner_name,
+          email: m.email,
+          phone: m.phone,
+          businessCategory: m.business_category,
+          gstin: m.gstin,
+          pan: m.pan,
+          mid: m.mid,
+          terminalId: m.terminal_id,
+          primaryLanguage: m.primary_language || 'en',
+          settlementAccount: {
+            bankName: m.bank_name,
+            accountNumber: m.bank_account_number,
+            ifsc: m.bank_ifsc,
+            accountHolder: m.bank_account_holder,
+          },
+          deviceInfo: {
+            soundboxSerial: m.soundbox_serial,
+            soundboxModel: m.soundbox_model,
+            batteryLevel: m.soundbox_battery,
+            networkStatus: m.soundbox_status,
+            soundVolume: m.soundbox_volume,
+            languageAnnouncement: m.primary_language || 'en',
+          },
+          role: 'OWNER',
+        },
+      });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 2. Financial Overview
+  // Update merchant profile language preference
+  app.patch('/api/merchants/:merchantId/language', (req, res) => {
+    try {
+      const { language } = req.body;
+      const db = AppDatabase.getDB();
+      db.prepare('UPDATE merchants SET primary_language = ? WHERE id = ?').run(language, req.params.merchantId);
+      res.json({ success: true, language });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 2. Financial Overview & Daily Collections
+  // ----------------------------------------------------
   app.get('/api/overview/:merchantId', (req, res) => {
     try {
-      const overview = DeterministicAnalyticsEngine.getFinancialOverview(req.params.merchantId);
+      const overview = FinancialEngine.getFinancialOverview(req.params.merchantId);
       res.json({ success: true, data: overview });
     } catch (err: any) {
       res.status(404).json({ success: false, error: err.message });
     }
   });
 
-  // 3. Transactions & Payment Intelligence
+  // ----------------------------------------------------
+  // 3. Transactions & Instant Payments
+  // ----------------------------------------------------
   app.get('/api/transactions/:merchantId', (req, res) => {
     try {
-      const transactions = merchantDB.getTransactions(req.params.merchantId);
-      res.json({ success: true, data: transactions });
+      const db = AppDatabase.getDB();
+      const txns = db.prepare(`
+        SELECT * FROM transactions 
+        WHERE merchant_id = ? 
+        ORDER BY timestamp DESC 
+        LIMIT 100
+      `).all(req.params.merchantId) as any[];
+
+      res.json({
+        success: true,
+        data: txns.map((t) => ({
+          id: t.id,
+          merchantId: t.merchant_id,
+          orderId: t.order_id,
+          amount: Number(t.amount),
+          feeMdr: Number(t.fee_mdr),
+          gstOnMdr: Number(t.gst_on_mdr),
+          netSettlementAmount: Number(t.net_settlement_amount),
+          paymentMethod: t.payment_method,
+          customerName: t.customer_name,
+          customerVpa: t.customer_vpa,
+          timestamp: t.timestamp,
+          status: t.status,
+          settlementBatchId: t.settlement_batch_id,
+          isFlaggedForDiscrepancy: Boolean(t.is_flagged_for_discrepancy),
+          discrepancyReason: t.discrepancy_reason,
+        })),
+      });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -74,121 +209,161 @@ async function startServer() {
     try {
       const merchantId = req.params.merchantId;
       const { amount, paymentMethod, customerName, customerVpa } = req.body;
-      const newTxn = merchantDB.addTransaction(merchantId, {
-        id: `TXN-${Date.now().toString().slice(-4)}`,
+      const numAmt = Number(amount) || 100;
+      const isCard = (paymentMethod || '').includes('CARD');
+      const feeMdr = isCard ? Math.round(numAmt * 0.01) : 0;
+      const gstOnMdr = isCard ? Math.round(numAmt * 0.0018) : 0;
+      const net = numAmt - feeMdr - gstOnMdr;
+      const now = new Date().toISOString();
+      const id = `TXN-${Date.now().toString().slice(-4)}`;
+      const orderId = `ORD-${Date.now().toString().slice(-6)}`;
+
+      const db = AppDatabase.getDB();
+      db.prepare(`
+        INSERT INTO transactions (
+          id, merchant_id, order_id, amount, fee_mdr, gst_on_mdr, 
+          net_settlement_amount, payment_method, customer_name, customer_vpa, 
+          timestamp, status, settlement_batch_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SETTLEMENT', 'SETTLE-TODAY-01')
+      `).run(
+        id,
         merchantId,
-        orderId: `ORD-${Date.now().toString().slice(-6)}`,
-        amount: Number(amount) || 100,
-        feeMdr: paymentMethod.includes('CARD') ? Math.round(amount * 0.01) : 0,
-        gstOnMdr: paymentMethod.includes('CARD') ? Math.round(amount * 0.0018) : 0,
-        netSettlementAmount: paymentMethod.includes('CARD') ? Math.round(amount * 0.9882) : Number(amount),
-        paymentMethod: paymentMethod || 'SOUNDBOX_UPI',
-        customerName: customerName || 'Retail Customer',
-        customerVpa: customerVpa || 'customer@upi',
-        timestamp: new Date().toISOString(),
-        status: 'SUCCESS',
-        settlementBatchId: 'SETTLE-TODAY-01',
-      });
+        orderId,
+        numAmt,
+        feeMdr,
+        gstOnMdr,
+        net,
+        paymentMethod || 'SOUNDBOX_UPI',
+        customerName || 'Retail Customer',
+        customerVpa || 'customer@upi',
+        now
+      );
 
-      merchantDB.addAuditLog(merchantId, {
-        actor: 'Paytm Payment Gateway / Soundbox',
-        role: 'SYSTEM',
-        eventType: 'PAYMENT_RECEIVED',
-        details: `Payment received: ₹${newTxn.amount} via ${newTxn.paymentMethod} from ${newTxn.customerName}`,
+      res.json({
+        success: true,
+        data: {
+          id,
+          merchantId,
+          orderId,
+          amount: numAmt,
+          feeMdr,
+          gstOnMdr,
+          netSettlementAmount: net,
+          paymentMethod: paymentMethod || 'SOUNDBOX_UPI',
+          customerName: customerName || 'Retail Customer',
+          customerVpa: customerVpa || 'customer@upi',
+          timestamp: now,
+          status: 'PENDING_SETTLEMENT',
+        },
       });
-
-      res.json({ success: true, data: newTxn });
     } catch (err: any) {
-      res.status(400).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 4. Settlement Reconciliation
+  // ----------------------------------------------------
+  // 4. Settlement Reconciliation (Problem A)
+  // ----------------------------------------------------
   app.get('/api/settlements/:merchantId', (req, res) => {
     try {
-      const settlements = merchantDB.getSettlements(req.params.merchantId);
-      const reconciliation = DeterministicAnalyticsEngine.reconcileSettlements(req.params.merchantId);
-      res.json({ success: true, data: { settlements, reconciliation } });
+      const reconciliation = FinancialEngine.reconcileSettlements(req.params.merchantId);
+      res.json({
+        success: true,
+        data: {
+          settlements: reconciliation.batches,
+          reconciliation,
+        },
+      });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 5. Cash Flow & Credit Intelligence
+  // ----------------------------------------------------
+  // 5. Cash Flow & Financial Planning (Problem C)
+  // ----------------------------------------------------
   app.get('/api/cashflow/:merchantId', (req, res) => {
     try {
-      const cashflow = DeterministicAnalyticsEngine.getCashFlowForecast(req.params.merchantId);
+      const cashflow = FinancialEngine.getCashFlowForecast(req.params.merchantId);
       res.json({ success: true, data: cashflow });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 6. Customer Khata Book
+  // ----------------------------------------------------
+  // 6. Customer Khata Book & Dues (Problem D)
+  // ----------------------------------------------------
   app.get('/api/khata/:merchantId', (req, res) => {
     try {
-      const analysis = DeterministicAnalyticsEngine.getKhataAnalysis(req.params.merchantId);
+      const analysis = KhataService.getKhataOverview(req.params.merchantId);
       res.json({ success: true, data: analysis });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
   app.post('/api/khata/:merchantId', (req, res) => {
     try {
-      const merchantId = req.params.merchantId;
-      const { customerName, customerPhone, amount, dueDate, notes } = req.body;
-      const newRecord = merchantDB.addCreditRecord(merchantId, {
-        id: `KHATA-${Date.now().toString().slice(-4)}`,
-        merchantId,
-        customerName,
-        customerPhone,
-        outstandingBalance: Number(amount) || 0,
-        totalCreditGiven: Number(amount) || 0,
-        totalRepaid: 0,
-        lastPurchaseDate: new Date().toISOString().slice(0, 10),
-        dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-        status: 'CURRENT',
-        notes: notes || 'New store credit ledger entry.',
-      });
-
-      merchantDB.addAuditLog(merchantId, {
-        actor: 'Merchant Operator',
-        role: 'OWNER',
-        eventType: 'KHATA_ENTRY_CREATED',
-        details: `Customer credit recorded: ₹${newRecord.outstandingBalance} for ${newRecord.customerName}`,
-      });
-
-      res.json({ success: true, data: newRecord });
+      const overview = KhataService.addCreditRecord(req.params.merchantId, req.body);
+      res.json({ success: true, data: overview });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 7. Growth Intelligence
-  app.get('/api/growth/:merchantId', (req, res) => {
+  app.post('/api/khata/:merchantId/repay', (req, res) => {
     try {
-      const insights = merchantDB.getGrowthInsights(req.params.merchantId);
-      res.json({ success: true, data: insights });
+      const { customerId, amount, paymentMode, note } = req.body;
+      const overview = KhataService.recordRepayment(
+        req.params.merchantId,
+        customerId,
+        Number(amount),
+        paymentMode,
+        note
+      );
+      res.json({ success: true, data: overview });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 8. Action Center Management
+  app.post('/api/khata/:merchantId/remind/:customerId', (req, res) => {
+    try {
+      const draft = KhataService.prepareReminderAction(req.params.merchantId, req.params.customerId);
+      res.json({ success: true, data: draft });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 7. Growth & Declining Sales Intelligence (Problem E)
+  // ----------------------------------------------------
+  app.get('/api/growth/:merchantId', (req, res) => {
+    try {
+      const declineAnalysis = FinancialEngine.getSalesDeclineAnalysis(req.params.merchantId);
+      res.json({ success: true, data: declineAnalysis.recommendations, fullAnalysis: declineAnalysis });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 8. Action Center Management (Sensitive Actions Workflow)
+  // ----------------------------------------------------
   app.get('/api/actions/:merchantId', (req, res) => {
     try {
-      const actions = merchantDB.getActions(req.params.merchantId);
+      const actions = ActionService.getActions(req.params.merchantId);
       res.json({ success: true, data: actions });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
   app.post('/api/actions/:merchantId', (req, res) => {
     try {
-      const merchantId = req.params.merchantId;
-      const action = merchantDB.createAction(merchantId, req.body);
+      const action = ActionService.createAction(req.params.merchantId, req.body);
       res.json({ success: true, data: action });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -199,88 +374,175 @@ async function startServer() {
     try {
       const { merchantId, actionId } = req.params;
       const { status, actor } = req.body;
-      const updated = merchantDB.updateActionStatus(merchantId, actionId, status, actor || 'Merchant Owner');
+      const updated = ActionService.updateActionStatus(merchantId, actionId, status, actor || 'Merchant Owner');
       res.json({ success: true, data: updated });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 9. Immutable Audit Logs
-  app.get('/api/audit/:merchantId', (req, res) => {
+  // ----------------------------------------------------
+  // 9. Paytm Monetization: Subscriptions
+  // ----------------------------------------------------
+  app.get('/api/monetization/subscriptions/:merchantId', (req, res) => {
     try {
-      const logs = merchantDB.getAuditLogs(req.params.merchantId);
-      res.json({ success: true, data: logs });
+      const sub = MonetizationService.getSubscription(req.params.merchantId);
+      res.json({ success: true, data: sub });
     } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 10. Daily Business Briefings
-  app.get('/api/briefings/:merchantId', (req, res) => {
+  app.post('/api/monetization/subscriptions/:merchantId/upgrade', (req, res) => {
     try {
-      const briefings = merchantDB.getBriefings(req.params.merchantId);
-      res.json({ success: true, data: briefings });
-    } catch (err: any) {
-      res.status(404).json({ success: false, error: err.message });
-    }
-  });
-
-  app.post('/api/briefings/:merchantId/generate', (req, res) => {
-    try {
-      const merchantId = req.params.merchantId;
-      const language: IndianLanguage = req.body.language || 'hi';
-      const overview = DeterministicAnalyticsEngine.getFinancialOverview(merchantId);
-      const khata = DeterministicAnalyticsEngine.getKhataAnalysis(merchantId);
-
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const briefing: DailyBriefing = {
-        id: `BRIEF-${Date.now()}`,
-        merchantId,
-        date: todayStr,
-        language,
-        todayCollections: overview.todayCollections,
-        todayTransactions: overview.todayTransactionsCount,
-        settlementStatus: `₹${overview.inTransitSettlementAmount.toLocaleString('en-IN')} इन-ट्रांजिट है। रात 11:30 बजे बैंक में जमा हो जाएगा।`,
-        settledAmount: overview.settledAmount,
-        pendingAmount: overview.pendingSettlementAmount,
-        refundsCount: overview.refundsCount,
-        refundsAmount: overview.refundsAmount,
-        exceptionsNotice: overview.discrepanciesCount > 0 ? `${overview.discrepanciesCount} विसंगति की जांच चल रही है।` : 'शून्य विसंगति, सभी लेनदेन सत्यापित।',
-        cashFlowHighlight: 'दैनिक ₹350 लोन ईएमआई कटने के बाद कल का शुद्ध प्रवाह ₹28,000+ रहेगा।',
-        creditOverdueSummary: `खाता बही में ₹${khata.overdueAmount.toLocaleString('en-IN')} बकाया देय तिथि पार कर चुका है।`,
-        keyGrowthOpportunity: 'शाम के पीक आवर्स (6:30 - 9:00 PM) में 68% बिक्री हो रही है।',
-        spokenAudioText: `आज की कुल बिक्री ${overview.todayCollections} रुपये रही। ${overview.inTransitSettlementAmount} रुपये आज रात आपके बैंक खाते में जमा हो जाएंगे।`,
-        audioDurationSeconds: 24,
-      };
-
-      merchantDB.saveBriefing(merchantId, briefing);
-      res.json({ success: true, data: briefing });
+      const sub = MonetizationService.upgradeSubscription(req.params.merchantId, req.body.planTier);
+      res.json({ success: true, data: sub });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 11. Agentic AI & Voice Query Interface
+  // ----------------------------------------------------
+  // 10. Paytm Monetization: Lending Partner Loan Discovery
+  // ----------------------------------------------------
+  app.get('/api/monetization/loans/:merchantId', (req, res) => {
+    try {
+      const loanInfo = MonetizationService.getLoanProducts(req.params.merchantId);
+      res.json({ success: true, data: loanInfo });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/monetization/loans/:merchantId/apply', (req, res) => {
+    try {
+      const application = MonetizationService.applyForLoan(req.params.merchantId, req.body);
+      res.json({ success: true, data: application });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 11. Paytm Monetization: Marketing & Advertising Campaigns
+  // ----------------------------------------------------
+  app.get('/api/monetization/campaigns/:merchantId', (req, res) => {
+    try {
+      const campaigns = MonetizationService.getCampaigns(req.params.merchantId);
+      res.json({ success: true, data: campaigns });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/monetization/campaigns/:merchantId', (req, res) => {
+    try {
+      const campaigns = MonetizationService.createCampaignDraft(req.params.merchantId, req.body);
+      res.json({ success: true, data: campaigns });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/monetization/campaigns/:merchantId/approve', (req, res) => {
+    try {
+      const campaigns = MonetizationService.approveCampaign(
+        req.params.merchantId,
+        req.body.campaignId,
+        req.body.approverName || 'Sunil Sharma'
+      );
+      res.json({ success: true, data: campaigns });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 12. Sarvam AI Voice Agent Integration
+  // ----------------------------------------------------
   app.post('/api/voice/query', async (req, res) => {
     try {
       const { merchantId, query, language, audioBase64 } = req.body;
-      if (!merchantId || !query) {
-        return res.status(400).json({ success: false, error: 'MerchantId and query are required.' });
+      if (!merchantId) {
+        return res.status(400).json({ success: false, error: 'MerchantId is required.' });
       }
 
-      const result = await AgentOrchestrator.processMerchantQuery({
+      const result = await SarvamAgentService.processVoiceQuery({
         merchantId,
         query,
-        language: language || 'hi',
+        language: language || 'en',
         audioBase64,
       });
 
       res.json({ success: true, data: result });
     } catch (err: any) {
+      console.error('[Voice Query Error]', err);
       res.status(500).json({ success: false, error: err.message });
     }
   });
+
+  // ----------------------------------------------------
+  // 13. Paytm Gateway Integration & Webhooks
+  // ----------------------------------------------------
+  app.get('/api/integrations/paytm/status', (req, res) => {
+    try {
+      const status = PaytmClient.getIntegrationStatus();
+      res.json({ success: true, data: status });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/integrations/paytm/webhook', (req, res) => {
+    try {
+      const result = PaytmWebhookHandler.handleWebhook(req.body);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 14. Spoken Daily Briefings
+  // ----------------------------------------------------
+  app.get('/api/briefings/:merchantId', (req, res) => {
+    try {
+      const overview = FinancialEngine.getFinancialOverview(req.params.merchantId);
+      const reconciliation = FinancialEngine.reconcileSettlements(req.params.merchantId);
+      const khata = KhataService.getKhataOverview(req.params.merchantId);
+
+      const briefing = {
+        id: `BRIEF-${Date.now()}`,
+        merchantId: req.params.merchantId,
+        date: new Date().toISOString().slice(0, 10),
+        language: 'en' as IndianLanguage,
+        todayCollections: overview.todayGrossCollections,
+        todayTransactions: overview.todayTransactionsCount,
+        settlementStatus: `₹${overview.inTransitAmount.toLocaleString('en-IN')} in transit to your registered bank account.`,
+        settledAmount: overview.settledAmount,
+        pendingAmount: overview.pendingAmount,
+        refundsCount: 0,
+        refundsAmount: 0,
+        exceptionsNotice: overview.discrepanciesCount > 0 ? `${overview.discrepanciesCount} discrepancy under verification.` : 'Zero discrepancy, all transactions verified.',
+        cashFlowHighlight: 'Projected net positive operating flow of ₹28,000+ after daily loan EMI deduction.',
+        creditOverdueSummary: `Store credit overdue of ₹${khata.totalOverdueAmount.toLocaleString('en-IN')} pending collection.`,
+        keyGrowthOpportunity: 'Evening peak hours (6:30 - 9:00 PM) drive 68% of retail footfall.',
+        spokenAudioText: `Good evening! Today's total collections stand at ₹${overview.todayGrossCollections}. ₹${overview.inTransitAmount} is scheduled to be credited to your bank account tonight.`,
+        audioDurationSeconds: 24,
+      };
+
+      res.json({ success: true, data: [briefing] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  return app;
+}
+
+async function startServer() {
+  const app = await createExpressApp();
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // ----------------------------------------------------
   // Vite Integration (Dev Middleware or Production Static)
@@ -300,11 +562,14 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Paytm Merchant Intelligence] Server running on http://0.0.0.0:${PORT}`);
+    console.log(`[Saathi by GrowIOTA] Server running on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+// Start standalone if invoked directly
+if (process.env.NODE_ENV !== 'test') {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}

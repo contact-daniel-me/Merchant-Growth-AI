@@ -4,7 +4,8 @@ import { SimpleHomeScreen } from './components/SimpleHomeScreen.tsx';
 import { SimpleVoiceAssistantScreen } from './components/SimpleVoiceAssistantScreen.tsx';
 import { SimplePaymentsScreen } from './components/SimplePaymentsScreen.tsx';
 import { SimpleSettlementScreen } from './components/SimpleSettlementScreen.tsx';
-import { SimpleBusinessTipsScreen } from './components/SimpleBusinessTipsScreen.tsx';
+import { CustomerDuesScreen } from './components/CustomerDuesScreen.tsx';
+import { BusinessGrowthScreen } from './components/BusinessGrowthScreen.tsx';
 import { SimpleReminderApprovalModal } from './components/SimpleReminderApprovalModal.tsx';
 import { SimpleProfileModal } from './components/SimpleProfileModal.tsx';
 import {
@@ -25,9 +26,19 @@ export default function App() {
   const [currentMerchantId, setCurrentMerchantId] = useState<string>('mer_sharma_kirana');
   const [currentMerchant, setCurrentMerchant] = useState<MerchantProfile | null>(null);
 
-  // Exactly 5 Navigation Items: home, payments, money, tips, assistant
+  // Exactly 6 Navigation Items: home, payments, money, dues, growth, assistant
   const [activeTab, setActiveTab] = useState<string>('home');
-  const [currentLanguage, setCurrentLanguage] = useState<IndianLanguage>('hi');
+  const [currentLanguage, setCurrentLanguage] = useState<IndianLanguage>(() => {
+    return (localStorage.getItem('saathi_preferred_lang') as IndianLanguage) || 'en';
+  });
+
+  const handleSelectLanguage = (lang: IndianLanguage) => {
+    setCurrentLanguage(lang);
+    localStorage.setItem('saathi_preferred_lang', lang);
+    if (currentMerchantId) {
+      api.updateLanguage(currentMerchantId, lang).catch(() => {});
+    }
+  };
 
   // Application Data States
   const [overview, setOverview] = useState<FinancialOverviewReport | null>(null);
@@ -59,7 +70,8 @@ export default function App() {
           setMerchants(data);
           const defaultMer = data.find((m: any) => m.id === currentMerchantId) || data[0];
           setCurrentMerchant(defaultMer);
-          setCurrentLanguage(defaultMer.primaryLanguage || 'hi');
+          const savedLang = localStorage.getItem('saathi_preferred_lang') as IndianLanguage;
+          setCurrentLanguage(savedLang || 'en');
         }
       })
       .catch((err) => console.error('Failed to load merchants:', err));
@@ -93,7 +105,10 @@ export default function App() {
 
       if (mer) {
         setCurrentMerchant(mer);
-        setCurrentLanguage(mer.primaryLanguage || 'hi');
+        const savedLang = localStorage.getItem('saathi_preferred_lang') as IndianLanguage;
+        if (!savedLang && mer.primaryLanguage) {
+          setCurrentLanguage(mer.primaryLanguage);
+        }
       }
       if (overviewData) setOverview(overviewData);
       if (txnsData) setTransactions(txnsData);
@@ -138,8 +153,19 @@ export default function App() {
     customerPhone: string;
     amount: number;
     dueDate: string;
+    notes?: string;
   }) => {
     await api.addKhataRecord(currentMerchantId, data);
+    await refreshMerchantData(currentMerchantId);
+  };
+
+  // Handle Record Customer Repayment
+  const handleRecordRepayment = async (customerId: string, amount: number) => {
+    await fetch(`/api/khata/${currentMerchantId}/repay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, amount }),
+    });
     await refreshMerchantData(currentMerchantId);
   };
 
@@ -295,7 +321,7 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         currentLanguage={currentLanguage}
-        onSelectLanguage={setCurrentLanguage}
+        onSelectLanguage={handleSelectLanguage}
         onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
@@ -333,12 +359,20 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'tips' && (
-          <SimpleBusinessTipsScreen
+        {activeTab === 'dues' && (
+          <CustomerDuesScreen
             creditRecords={creditRecords}
             currentLanguage={currentLanguage}
             onPrepareReminder={handlePrepareReminder}
             onAddCreditRecord={handleAddCreditRecord}
+            onRecordRepayment={handleRecordRepayment}
+          />
+        )}
+
+        {activeTab === 'growth' && (
+          <BusinessGrowthScreen
+            merchantId={currentMerchant.id}
+            currentLanguage={currentLanguage}
             onAskVoicePrompt={(prompt) => {
               setActiveTab('assistant');
             }}
@@ -349,7 +383,7 @@ export default function App() {
           <SimpleVoiceAssistantScreen
             merchant={currentMerchant}
             currentLanguage={currentLanguage}
-            onSelectLanguage={setCurrentLanguage}
+            onSelectLanguage={handleSelectLanguage}
             onApproveAction={handleApproveAction}
             onRejectAction={handleRejectAction}
           />

@@ -291,10 +291,10 @@ export const api = {
     return briefing;
   },
 
-  // 12. Voice Query
+  // 12. Voice Query (Sarvam AI Voice Assistant)
   async queryVoice(payload: {
     merchantId: string;
-    query: string;
+    query?: string;
     language?: IndianLanguage;
     audioBase64?: string;
   }) {
@@ -310,9 +310,84 @@ export const api = {
 
     return AgentOrchestrator.processMerchantQuery({
       merchantId: payload.merchantId,
-      query: payload.query,
-      language: payload.language || 'hi',
+      query: payload.query || 'Show today overview',
+      language: payload.language || 'en',
       audioBase64: payload.audioBase64,
     });
+  },
+
+  // 13. Subscriptions (Paytm Monetization 1)
+  async getSubscription(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/monetization/subscriptions/${merchantId}`);
+    return res.data;
+  },
+
+  async upgradeSubscription(merchantId: string, planTier: string) {
+    const res = await safeFetchJson<any>(`/api/monetization/subscriptions/${merchantId}/upgrade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planTier }),
+    });
+    return res.data;
+  },
+
+  // 14. Loan Discovery (Paytm Monetization 2)
+  async getLoanProducts(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/monetization/loans/${merchantId}`);
+    return res.data;
+  },
+
+  async applyForLoan(merchantId: string, payload: {
+    productId: string;
+    requestedAmount: number;
+    tenureMonths: number;
+    consentGiven: boolean;
+  }) {
+    const res = await safeFetchJson<any>(`/api/monetization/loans/${merchantId}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  // 15. Marketing Campaigns (Paytm Monetization 3)
+  async getCampaigns(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/monetization/campaigns/${merchantId}`);
+    return res.data;
+  },
+
+  async createCampaign(merchantId: string, payload: any) {
+    const res = await safeFetchJson<any>(`/api/monetization/campaigns/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  async approveCampaign(merchantId: string, campaignId: string, approverName?: string) {
+    const res = await safeFetchJson<any>(`/api/monetization/campaigns/${merchantId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaignId, approverName }),
+    });
+    return res.data;
+  },
+
+  // 16. Paytm Gateway Integration Status
+  async getPaytmStatus() {
+    const res = await safeFetchJson<any>('/api/integrations/paytm/status');
+    return res.data;
+  },
+
+  // 17. Update Merchant Language
+  async updateLanguage(merchantId: string, language: IndianLanguage) {
+    const res = await safeFetchJson<any>(`/api/merchants/${merchantId}/language`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language }),
+    });
+    return res;
   },
 };

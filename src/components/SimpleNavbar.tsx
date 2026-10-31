@@ -5,10 +5,10 @@ import {
   Home,
   CreditCard,
   Building,
-  Sparkles,
+  TrendingUp,
+  Users,
   Mic,
   User,
-  Radio,
   Check,
   ChevronDown,
 } from 'lucide-react';
@@ -37,11 +37,11 @@ export const SimpleNavbar: React.FC<SimpleNavbarProps> = ({
   const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
 
-  const t = translations[currentLanguage] || translations.hi;
+  const t = translations[currentLanguage] || translations.en;
 
   const languages: { code: IndianLanguage; label: string; native: string }[] = [
-    { code: 'hi', label: 'Hindi', native: 'हिन्दी' },
     { code: 'en', label: 'English', native: 'English' },
+    { code: 'hi', label: 'Hindi', native: 'हिन्दी' },
     { code: 'ta', label: 'Tamil', native: 'தமிழ்' },
     { code: 'kn', label: 'Kannada', native: 'ಕನ್ನಡ' },
     { code: 'te', label: 'Telugu', native: 'తెలుగు' },
@@ -51,7 +51,8 @@ export const SimpleNavbar: React.FC<SimpleNavbarProps> = ({
     { id: 'home', label: t.navHome, icon: Home },
     { id: 'payments', label: t.navPayments, icon: CreditCard },
     { id: 'money', label: t.navMoney, icon: Building },
-    { id: 'tips', label: t.navTips, icon: Sparkles },
+    { id: 'dues', label: t.navCustomerDues, icon: Users },
+    { id: 'growth', label: t.navGrowth, icon: TrendingUp },
     { id: 'assistant', label: t.navAssistant, icon: Mic, highlight: true },
   ];
 
@@ -189,8 +190,8 @@ export const SimpleNavbar: React.FC<SimpleNavbarProps> = ({
       </header>
 
       {/* Mobile Fixed Bottom Navigation Bar (Large icons, large text, easy thumb access) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg px-2 py-1.5">
-        <div className="grid grid-cols-5 gap-1">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg px-1 py-1.5">
+        <div className="grid grid-cols-6 gap-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

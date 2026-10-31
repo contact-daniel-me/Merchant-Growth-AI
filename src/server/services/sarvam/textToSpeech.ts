@@ -1,0 +1,45 @@
+import { getSarvamConfig, isSarvamConfigured } from './config.ts';
+import { SarvamClient } from './client.ts';
+import { LanguageService } from './languageService.ts';
+import { IndianLanguage } from '../../../types/index.ts';
+
+export class TextToSpeechService {
+  /**
+   * Synthesizes natural human-sounding voice audio using Sarvam Bulbul v4 Flash
+   */
+  public static async synthesizeSpeech(
+    text: string,
+    language: IndianLanguage = 'en'
+  ): Promise<{ audioBase64: string | null; audioUrl?: string }> {
+    if (!isSarvamConfigured() || !text.trim()) {
+      return { audioBase64: null };
+    }
+
+    const config = getSarvamConfig();
+    const sarvamLang = LanguageService.getSarvamCode(language);
+    const speaker = LanguageService.getSpeaker(language);
+
+    // Limit text to 1000 characters for snappy voice response
+    const sanitizedText = text.slice(0, 1000);
+
+    const body = {
+      text: sanitizedText,
+      language_code: sarvamLang,
+      model: config.ttsModel,
+      speaker,
+      pace: 1.0,
+      speech_sample_rate: 24000,
+    };
+
+    try {
+      const result = await SarvamClient.post(config.ttsEndpoint, body);
+      if (result.audios && Array.isArray(result.audios) && result.audios.length > 0) {
+        return { audioBase64: result.audios[0] };
+      }
+      return { audioBase64: null };
+    } catch (err: any) {
+      console.warn('[Sarvam TTS] Synthesis call failed:', err.message);
+      return { audioBase64: null };
+    }
+  }
+}

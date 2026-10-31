@@ -1,0 +1,27 @@
+services:
+  saathi-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: saathi-growiota
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/saathi.db
+      - JWT_SECRET=saathi-paytm-production-secret-key-growiota-2026
+      - SARVAM_API_KEY=${SARVAM_API_KEY}
+      - SARVAM_STT_MODEL=saaras:v4
+      - SARVAM_TTS_MODEL=bulbul:v4-flash
+      - SARVAM_LLM_MODEL=sarvam-105b
+      - PAYTM_MID=${PAYTM_MID}
+      - PAYTM_MERCHANT_KEY=${PAYTM_MERCHANT_KEY}
+      - PAYTM_ENVIRONMENT=STAGE
+    volumes:
+      - saathi-db-data:/app/data
+
+volumes:
+  saathi-db-data:
+    driver: local

@@ -300,13 +300,13 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
             <button
-              onClick={() => onNavigateTab('tips')}
+              onClick={() => onNavigateTab('growth')}
               className="text-xs font-bold text-[#002970] hover:text-[#00BAF2] flex items-center gap-1 transition-colors"
             >
-              <span>Read more tips & reminders →</span>
+              <span>Explore growth & partner loans →</span>
             </button>
             <button
-              onClick={() => onOpenVoice('बिक्री बढ़ाने के लिए क्या उपाय करें?')}
+              onClick={() => onOpenVoice('How can I increase my shop sales?')}
               className="text-xs text-[#00BAF2] font-semibold hover:underline"
             >
               Ask Assistant

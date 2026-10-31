@@ -126,11 +126,39 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
     window.speechSynthesis.speak(utterance);
   };
 
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
   const stopSpeaking = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      setIsSpeaking(false);
     }
+    setIsSpeaking(false);
+  };
+
+  const playSynthesizedOrFallback = (spokenText: string, audioBase64?: string | null) => {
+    stopSpeaking();
+    if (audioBase64) {
+      try {
+        const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+        audioPlayerRef.current = audio;
+        setIsSpeaking(true);
+        audio.onended = () => setIsSpeaking(false);
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          speakText(spokenText);
+        };
+        audio.play().catch(() => speakText(spokenText));
+        return;
+      } catch {
+        speakText(spokenText);
+        return;
+      }
+    }
+    speakText(spokenText);
   };
 
   const handleProcessQuery = async (queryText: string) => {
@@ -152,8 +180,8 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
           actionCard: result.actionCard,
         });
 
-        // Automatically narrate spoken answer
-        speakText(result.spokenResponseText || result.responseText);
+        // Automatically narrate spoken answer via Sarvam audio or fallback
+        playSynthesizedOrFallback(result.spokenResponseText || result.responseText, result.audioBase64);
       }
     } catch (err: any) {
       setLastAnswer({
