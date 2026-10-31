@@ -48,10 +48,10 @@ export class TelephonyGateway {
       };
     }
 
-    const sarvamWorkspace = process.env.SARVAM_WORKSPACE_ID;
-    const sarvamAppId = process.env.SARVAM_APP_ID;
+    const sarvamWorkspace = process.env.SARVAM_WORKSPACE_ID || '019f7b92-d887-7867-be43-2c901321c38d';
+    const sarvamWorkspaceKey = process.env.SARVAM_WORKSPACE_API_KEY || 'sk_samvaad_emqr80ld_ro8sItri5PfQHR4m2582AXJQ';
 
-    if (sarvamWorkspace) {
+    if (sarvamWorkspace || sarvamWorkspaceKey) {
       return {
         provider: 'SARVAM_SAMVAAD',
         isConfigured: true,
@@ -203,7 +203,7 @@ export class TelephonyGateway {
     // 3. DIAL VIA SARVAM SAMVAAD OUTBOUND API
     if (config.provider === 'SARVAM_SAMVAAD') {
       try {
-        const apiKey = process.env.SARVAM_WORKSPACE_API_KEY || process.env.SARVAM_API_KEY || '';
+        const apiKey = process.env.SARVAM_WORKSPACE_API_KEY || 'sk_samvaad_emqr80ld_ro8sItri5PfQHR4m2582AXJQ';
         const orgId = process.env.SARVAM_ORG_ID || '019f7b92-d875-763a-9fa6-342c27866de6';
         const workspaceId = process.env.SARVAM_WORKSPACE_ID || '019f7b92-d887-7867-be43-2c901321c38d';
         const appId = process.env.SARVAM_APP_ID || 'Conversatio-f9c1c7d2-6b12';
