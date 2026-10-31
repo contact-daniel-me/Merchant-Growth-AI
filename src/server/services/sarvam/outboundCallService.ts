@@ -99,6 +99,35 @@ export class OutboundCallService {
       ? `Automated ${callPurpose} call connected to ${recipientName} (${recipientPhone}). Sarvam Bulbul audio generated.`
       : `Real cellular call dispatched via ${dialResult.carrier} to ${recipientName} (${recipientPhone}). Status: ${dialResult.status}. ${dialResult.message}`;
 
+    // Validate foreign keys to avoid SQLite constraint violations
+    let validMerchantId = merchantId;
+    try {
+      const m = db.prepare('SELECT id FROM merchants WHERE id = ?').get(merchantId);
+      if (!m) validMerchantId = 'mer_sharma_kirana';
+    } catch {
+      validMerchantId = 'mer_sharma_kirana';
+    }
+
+    let validCustomerId: string | null = null;
+    if (customerId) {
+      try {
+        const c = db.prepare('SELECT id FROM customer_records WHERE id = ?').get(customerId);
+        if (c) validCustomerId = customerId;
+      } catch {
+        validCustomerId = null;
+      }
+    }
+
+    let validActionId: string | null = null;
+    if (actionId) {
+      try {
+        const a = db.prepare('SELECT id FROM merchant_actions WHERE id = ?').get(actionId);
+        if (a) validActionId = actionId;
+      } catch {
+        validActionId = null;
+      }
+    }
+
     // 3. Persist Call Record
     db.prepare(`
       INSERT INTO customer_voice_calls (
@@ -108,15 +137,15 @@ export class OutboundCallService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETED', 'GEMINI_ANALYTICS', ?, ?, ?, ?, ?)
     `).run(
       callId,
-      merchantId,
-      customerId || null,
+      validMerchantId,
+      validCustomerId,
       recipientName,
       recipientPhone,
       callPurpose,
       language,
       scriptText,
       audioBase64,
-      actionId || null,
+      validActionId,
       durationSeconds,
       outcomeNote,
       now,
@@ -124,9 +153,9 @@ export class OutboundCallService {
     );
 
     // 4. Update Action status to EXECUTED if linked to an action ID
-    if (actionId) {
+    if (validActionId) {
       try {
-        ActionService.updateActionStatus(merchantId, actionId, 'EXECUTED', 'Automated Voice Dispatcher');
+        ActionService.updateActionStatus(validMerchantId, validActionId, 'EXECUTED', 'Automated Voice Dispatcher');
       } catch (e: any) {
         console.warn('[OutboundCallService] Action status update warning:', e.message);
       }
@@ -139,7 +168,7 @@ export class OutboundCallService {
         VALUES (?, ?, 'Merchant Operator', 'OWNER', 'AUTOMATED_VOICE_CALL_DISPATCHED', ?, ?, '127.0.0.1', 'IMMHASH')
       `).run(
         `AUD-${callId}`,
-        merchantId,
+        validMerchantId,
         `Customer Voice Call dispatched to ${recipientName} (${recipientPhone}) for ₹ balance reminder. Provider: ${dialResult.carrier}.`,
         now
       );
