@@ -5,7 +5,7 @@ import { getSarvamConfig, isSarvamConfigured } from '../sarvam/config.ts';
  * One place for every LLM call in the app.
  *
  * Provider order (first one configured wins, the next is tried if a call fails):
- *   1. Gemini   — when GEMINI_API_KEY is set (model: GEMINI_MODEL, default gemini-2.5-flash)
+ *   1. Gemini   — when GEMINI_API_KEY is set (model: GEMINI_MODEL, default gemini-3.5-flash-lite)
  *   2. Sarvam   — when SARVAM_API_KEY is set (model: SARVAM_LLM_MODEL, default sarvam-105b)
  * Set LLM_PROVIDER=sarvam or LLM_PROVIDER=gemini to force the order.
  *

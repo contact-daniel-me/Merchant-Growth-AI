@@ -20,6 +20,10 @@ import {
   Check,
   Building,
   RotateCcw,
+  Loader2,
+  PlusCircle,
+  BarChart3,
+  Lightbulb,
 } from 'lucide-react';
 
 interface BusinessGrowthScreenProps {
@@ -43,6 +47,7 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
   const [geminiData, setGeminiData] = useState<any>(null);
   const [isGeminiRefreshing, setIsGeminiRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
 
   // Loan apply modal
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -51,32 +56,50 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
   const [consentChecked, setConsentChecked] = useState(false);
   const [loanSuccessMsg, setLoanSuccessMsg] = useState('');
 
+  // Quick campaign draft state
+  const [isDraftingCampaign, setIsDraftingCampaign] = useState(false);
+
   useEffect(() => {
     loadAllGrowthData();
   }, [merchantId, currentLanguage]);
 
-  const loadAllGrowthData = async () => {
-    setIsLoading(true);
+  const loadAllGrowthData = async (isManualRefresh = false) => {
+    if (isManualRefresh) {
+      setIsRefreshingAll(true);
+    } else {
+      setIsLoading(true);
+    }
+
     try {
-      const [growthRes, loans, camps, sub, gemini] = await Promise.all([
-        fetch(`/api/growth/${merchantId}`).then((r) => r.json()),
+      // Use Promise.allSettled so that no single endpoint delay/error blocks others
+      const [growthRes, loansRes, campsRes, subRes, geminiRes] = await Promise.allSettled([
+        api.getGrowthAnalysis(merchantId),
         api.getLoanProducts(merchantId),
         api.getCampaigns(merchantId),
         api.getSubscription(merchantId),
         api.getGeminiInsights(merchantId, currentLanguage),
       ]);
 
-      if (growthRes.fullAnalysis) {
-        setDeclineData(growthRes.fullAnalysis);
+      if (growthRes.status === 'fulfilled' && growthRes.value) {
+        setDeclineData(growthRes.value);
       }
-      if (loans) setLoanData(loans);
-      if (camps) setCampaigns(camps);
-      if (sub) setSubData(sub);
-      if (gemini) setGeminiData(gemini);
+      if (loansRes.status === 'fulfilled' && loansRes.value) {
+        setLoanData(loansRes.value);
+      }
+      if (campsRes.status === 'fulfilled' && campsRes.value) {
+        setCampaigns(Array.isArray(campsRes.value) ? campsRes.value : []);
+      }
+      if (subRes.status === 'fulfilled' && subRes.value) {
+        setSubData(subRes.value);
+      }
+      if (geminiRes.status === 'fulfilled' && geminiRes.value) {
+        setGeminiData(geminiRes.value);
+      }
     } catch (err) {
       console.error('Failed to load growth intelligence:', err);
     } finally {
       setIsLoading(false);
+      setIsRefreshingAll(false);
     }
   };
 
@@ -128,6 +151,25 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
     }
   };
 
+  const handleDraftAfternoonCampaign = async () => {
+    setIsDraftingCampaign(true);
+    try {
+      await api.createCampaign(merchantId, {
+        campaignName: 'Afternoon Footfall Lift Flash Flyer',
+        channel: 'WHATSAPP_FLYER',
+        targetAudience: 'Top 50 Regular Afternoon Grocery Buyers',
+        flyerText: 'Special Afternoon Offer: Get 5% cashback on pulses & dry fruits today from 2 PM to 5 PM at Sharma Kirana!',
+        budget: 150,
+        estimatedReach: 50,
+      });
+      await loadAllGrowthData();
+    } catch (e) {
+      console.warn('Draft campaign creation error:', e);
+    } finally {
+      setIsDraftingCampaign(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20 md:pb-6 font-sans">
       {/* Top Header Card */}
@@ -146,56 +188,100 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
             </p>
           </div>
 
-          {/* Sub Navigation Pills */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl self-start sm:self-center text-xs font-semibold">
+          <div className="flex items-center gap-2 self-start sm:self-center">
+            {/* Sub Navigation Pills */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
+              <button
+                onClick={() => setActiveSection('RECOMMENDATIONS')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  activeSection === 'RECOMMENDATIONS'
+                    ? 'bg-white text-[#002970] shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Intelligence
+              </button>
+              <button
+                onClick={() => setActiveSection('LOANS')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  activeSection === 'LOANS'
+                    ? 'bg-white text-[#002970] shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Partner Loans
+              </button>
+              <button
+                onClick={() => setActiveSection('CAMPAIGNS')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  activeSection === 'CAMPAIGNS'
+                    ? 'bg-white text-[#002970] shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Campaigns
+              </button>
+              <button
+                onClick={() => setActiveSection('SUBSCRIPTION')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  activeSection === 'SUBSCRIPTION'
+                    ? 'bg-white text-[#002970] shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Plan
+              </button>
+            </div>
+
+            {/* Quick Refresh All Button */}
             <button
-              onClick={() => setActiveSection('RECOMMENDATIONS')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeSection === 'RECOMMENDATIONS' ? 'bg-white text-[#002970] shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
+              onClick={() => loadAllGrowthData(true)}
+              disabled={isRefreshingAll}
+              title="Refresh all business metrics"
+              className="p-2 text-slate-500 hover:text-[#002970] hover:bg-slate-100 rounded-xl transition cursor-pointer"
             >
-              Intelligence
-            </button>
-            <button
-              onClick={() => setActiveSection('LOANS')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeSection === 'LOANS' ? 'bg-white text-[#002970] shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Partner Loans
-            </button>
-            <button
-              onClick={() => setActiveSection('CAMPAIGNS')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeSection === 'CAMPAIGNS' ? 'bg-white text-[#002970] shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Campaigns
-            </button>
-            <button
-              onClick={() => setActiveSection('SUBSCRIPTION')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeSection === 'SUBSCRIPTION' ? 'bg-white text-[#002970] shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Plan
+              <RotateCcw className={`w-4 h-4 ${isRefreshingAll ? 'animate-spin text-[#00BAF2]' : ''}`} />
             </button>
           </div>
         </div>
 
         {loanSuccessMsg && (
           <div className="mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center justify-between">
-            <span>{loanSuccessMsg}</span>
-            <button onClick={() => setLoanSuccessMsg('')} className="text-emerald-600 font-bold ml-2">✕</button>
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {loanSuccessMsg}
+            </span>
+            <button onClick={() => setLoanSuccessMsg('')} className="text-emerald-600 font-bold ml-2 cursor-pointer">✕</button>
           </div>
         )}
       </div>
 
+      {/* Loading Skeleton if initial data is being fetched and no data exists yet */}
+      {isLoading && !declineData && !geminiData && (
+        <div className="space-y-4 animate-pulse">
+          <div className="bg-gradient-to-br from-[#002970] to-[#001f55] rounded-2xl p-6 text-white h-44 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <div className="h-6 bg-white/20 rounded-md w-48" />
+              <div className="h-6 bg-white/20 rounded-md w-28" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-4 bg-white/15 rounded w-3/4" />
+              <div className="h-4 bg-white/10 rounded w-1/2" />
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 h-32" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 h-48" />
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 h-48" />
+          </div>
+        </div>
+      )}
+
       {/* SECTION 1: RECOMMENDATIONS & 4-WEEK SALES DECLINE ANALYSIS */}
-      {activeSection === 'RECOMMENDATIONS' && (
+      {activeSection === 'RECOMMENDATIONS' && (!isLoading || declineData || geminiData) && (
         <div className="space-y-4">
           {/* Gemini AI Business Intelligence & Performance Audit */}
-          {geminiData && (
+          {geminiData ? (
             <div className="bg-gradient-to-br from-[#002970] to-[#001f55] rounded-2xl text-white p-5 sm:p-6 shadow-md border border-blue-900">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
                 <div className="flex items-center gap-3">
@@ -205,7 +291,7 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-[#00BAF2] uppercase tracking-wider">
-                        Gemini 2.5 Analytics Engine
+                        Gemini 3.5 Analytics Engine
                       </span>
                       <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-mono">
                         Real-Time Analysis
@@ -263,6 +349,23 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
                 </div>
               )}
             </div>
+          ) : (
+            /* Fallback or refreshing header */
+            <div className="bg-gradient-to-br from-[#002970] to-[#001f55] rounded-2xl text-white p-5 sm:p-6 shadow-md border border-blue-900 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-6 h-6 text-[#00BAF2] animate-pulse" />
+                <div>
+                  <h3 className="font-bold text-sm">Gemini Analytics Initializing</h3>
+                  <p className="text-xs text-blue-200 mt-0.5">Synthesizing live Soundbox transactions and retail ledger telemetry...</p>
+                </div>
+              </div>
+              <button
+                onClick={handleRefreshGemini}
+                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold transition cursor-pointer"
+              >
+                Analyze Now
+              </button>
+            </div>
           )}
 
           {/* Declining sales benchmark banner */}
@@ -284,7 +387,7 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
                 <div className="text-xs text-slate-500">
                   Status:{' '}
                   <span className="font-bold text-emerald-700">
-                    {declineData.trendStatus.replace('_', ' ')}
+                    {declineData.trendStatus?.replace('_', ' ') || 'HEALTHY GROWTH'}
                   </span>
                 </div>
               </div>
@@ -302,49 +405,60 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
 
           {/* Actionable recommendations */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {declineData?.recommendations?.map((r: any) => (
-              <div key={r.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#002970] font-bold text-[10px] uppercase tracking-wide">
-                      {r.category}
-                    </span>
-                    <span className="text-xs text-slate-400 font-semibold">
-                      Confidence: {r.confidenceScore}%
-                    </span>
+            {declineData?.recommendations && declineData.recommendations.length > 0 ? (
+              declineData.recommendations.map((r: any) => (
+                <div key={r.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#002970] font-bold text-[10px] uppercase tracking-wide">
+                        {r.category}
+                      </span>
+                      <span className="text-xs text-slate-400 font-semibold">
+                        Confidence: {r.confidenceScore}%
+                      </span>
+                    </div>
+
+                    <h3 className="font-bold text-base text-slate-900">{r.title}</h3>
+
+                    <div className="mt-3 space-y-2 text-xs">
+                      <div>
+                        <strong className="text-slate-700">{t.whatWeNoticed}:</strong>{' '}
+                        <span className="text-slate-600">{r.evidence}</span>
+                      </div>
+                      <div>
+                        <strong className="text-slate-700">{t.whatYouCanDo}:</strong>{' '}
+                        <span className="text-slate-600">{r.suggestedAction}</span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-emerald-900 font-medium">
+                        Projected Outcome: {r.expectedOutcome}
+                      </div>
+                    </div>
                   </div>
 
-                  <h3 className="font-bold text-base text-slate-900">{r.title}</h3>
-
-                  <div className="mt-3 space-y-2 text-xs">
-                    <div>
-                      <strong className="text-slate-700">{t.whatWeNoticed}:</strong>{' '}
-                      <span className="text-slate-600">{r.evidence}</span>
-                    </div>
-                    <div>
-                      <strong className="text-slate-700">{t.whatYouCanDo}:</strong>{' '}
-                      <span className="text-slate-600">{r.suggestedAction}</span>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-emerald-900 font-medium">
-                      Projected Outcome: {r.expectedOutcome}
-                    </div>
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">Assumes standard store trading hours</span>
+                    {onAskVoicePrompt && (
+                      <button
+                        onClick={() => onAskVoicePrompt(`How to implement: ${r.title}`)}
+                        className="text-xs font-bold text-[#00BAF2] hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>Ask Merchant Assistant</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400">Assumes standard store trading hours</span>
-                  {onAskVoicePrompt && (
-                    <button
-                      onClick={() => onAskVoicePrompt(`How to implement: ${r.title}`)}
-                      className="text-xs font-bold text-[#00BAF2] hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Ask Merchant Assistant</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+              ))
+            ) : (
+              /* Fallback Recommendation card if array was empty */
+              <div className="col-span-full bg-white rounded-2xl border border-slate-200 p-6 text-center text-slate-500">
+                <Lightbulb className="w-8 h-8 text-[#00BAF2] mx-auto mb-2" />
+                <h4 className="font-bold text-slate-800 text-sm">Actionable Store Recommendations</h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Continue recording Soundbox transactions to discover automated peak-hour sales boosts and combo suggestions.
+                </p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}
@@ -359,50 +473,56 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {loanData?.products?.map((p: any) => {
-              const partner = loanData.partners?.find((pt: any) => pt.id === p.partnerId);
-              return (
-                <div key={p.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-xs font-bold text-[#002970]">
-                        {partner?.name || 'Authorized Bank Partner'}
-                      </span>
-                      <span className="text-[10px] font-semibold text-slate-400">
-                        RBI Registered
-                      </span>
-                    </div>
+            {loanData?.products && loanData.products.length > 0 ? (
+              loanData.products.map((p: any) => {
+                const partner = loanData.partners?.find((pt: any) => pt.id === p.partnerId);
+                return (
+                  <div key={p.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-xs font-bold text-[#002970]">
+                          {partner?.name || 'Authorized Bank Partner'}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          RBI Registered
+                        </span>
+                      </div>
 
-                    <h3 className="font-bold text-base text-slate-900">{p.name}</h3>
+                      <h3 className="font-bold text-base text-slate-900">{p.name}</h3>
 
-                    <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                      <div>Loan Amount: ₹{p.minAmount.toLocaleString('en-IN')} – ₹{p.maxAmount.toLocaleString('en-IN')}</div>
-                      <div>Interest Rate: {p.interestRateRange}</div>
-                      <div>Repayment: {p.repaymentFrequency.replace(/_/g, ' ')}</div>
-                      <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-[11px] text-slate-500">
-                        {p.eligibilityCriteria}
+                      <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+                        <div>Loan Amount: ₹{p.minAmount.toLocaleString('en-IN')} – ₹{p.maxAmount.toLocaleString('en-IN')}</div>
+                        <div>Interest Rate: {p.interestRateRange}</div>
+                        <div>Repayment: {p.repaymentFrequency.replace(/_/g, ' ')}</div>
+                        <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-[11px] text-slate-500">
+                          {p.eligibilityCriteria}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-700">
-                      Pre-qualified up to ₹{(p.preQualifiedEstimate || 150000).toLocaleString('en-IN')}
-                    </span>
-                    <button
-                      onClick={() => setSelectedProduct(p)}
-                      className="px-4 py-2 rounded-xl bg-[#002970] hover:bg-[#001f55] text-white text-xs font-bold transition shadow-xs cursor-pointer"
-                    >
-                      Apply with Consent
-                    </button>
+                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-700">
+                        Pre-qualified up to ₹{(p.preQualifiedEstimate || 150000).toLocaleString('en-IN')}
+                      </span>
+                      <button
+                        onClick={() => setSelectedProduct(p)}
+                        className="px-4 py-2 rounded-xl bg-[#002970] hover:bg-[#001f55] text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                      >
+                        Apply with Consent
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="col-span-full p-8 bg-white rounded-2xl border border-slate-200 text-center text-slate-500 text-xs">
+                No active loan products found. Check back shortly.
+              </div>
+            )}
           </div>
 
           {/* Past Applications */}
-          {loanData?.applications?.length > 0 && (
+          {loanData?.applications && loanData.applications.length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
               <h3 className="text-sm font-bold text-slate-800 mb-3">Your Loan Applications</h3>
               <div className="divide-y divide-slate-100 text-xs">
@@ -427,14 +547,26 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
       {activeSection === 'CAMPAIGNS' && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-            <h3 className="text-sm font-bold text-slate-800 mb-1">Customer Promotional Broadcasts</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Authorized WhatsApp flyers to drive off-peak footfall. Requires explicit merchant approval before execution.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Customer Promotional Broadcasts</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Authorized WhatsApp flyers to drive off-peak footfall. Requires explicit merchant approval before execution.
+                </p>
+              </div>
+              <button
+                onClick={handleDraftAfternoonCampaign}
+                disabled={isDraftingCampaign}
+                className="px-3 py-1.5 rounded-xl bg-[#00BAF2] hover:bg-[#009ecc] text-white text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-center cursor-pointer disabled:opacity-50"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>{isDraftingCampaign ? 'Drafting...' : 'Draft Afternoon Flyer'}</span>
+              </button>
+            </div>
 
             {campaigns.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-400">
-                No active promotional campaigns. Ask Merchant voice assistant to draft an afternoon flyer!
+                No active promotional campaigns. Click "Draft Afternoon Flyer" or ask the voice assistant to boost store footfall!
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
@@ -476,7 +608,7 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
             )}
           </div>
 
-          {/* Algorithmic RFM Customer Segmentation & Campaign Dispatch (Part 8) */}
+          {/* Algorithmic RFM Customer Segmentation & Campaign Dispatch */}
           <CustomerMarketingSegmentsCard merchantId={merchantId} currentLanguage={currentLanguage} />
         </div>
       )}
@@ -596,14 +728,14 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedProduct(null)}
-                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!consentChecked}
-                  className="px-4 py-2 text-xs font-bold bg-[#002970] hover:bg-[#001f55] disabled:opacity-50 text-white rounded-xl shadow-xs"
+                  className="px-4 py-2 text-xs font-bold bg-[#002970] hover:bg-[#001f55] disabled:opacity-50 text-white rounded-xl shadow-xs cursor-pointer"
                 >
                   Submit Application
                 </button>
@@ -615,4 +747,3 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
     </div>
   );
 };
-
