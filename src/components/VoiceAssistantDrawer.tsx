@@ -1,31 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  MerchantProfile,
+  AgentChatMessage,
+  IndianLanguage,
+  MerchantAction,
+} from '../types/index.ts';
 import { api } from '../services/api.ts';
-import { IndianLanguage, AgentChatMessage, MerchantAction, MerchantProfile } from '../types/index.ts';
 import {
   Mic,
   MicOff,
   Send,
+  Sparkles,
   Volume2,
   VolumeX,
   X,
-  Sparkles,
-  Bot,
-  User,
   CheckCircle2,
   AlertTriangle,
-  RotateCcw,
-  Languages,
-  ShieldCheck,
-  ShieldAlert,
-  Lock,
-  Unlock,
-  KeyRound,
   Play,
-  ArrowRight,
-  TrendingUp,
-  CreditCard,
-  Building,
-  HelpCircle,
+  RotateCcw,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface VoiceAssistantDrawerProps {
@@ -45,153 +38,268 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
   onApproveAction,
   onRejectAction,
 }) => {
-  const [selectedLanguage, setSelectedLanguage] = useState<IndianLanguage>(merchant.primaryLanguage || 'hi');
+  const [messages, setMessages] = useState<AgentChatMessage[]>([
+    {
+      id: 'welcome-1',
+      sender: 'assistant',
+      content: `Welcome ${merchant.ownerName}! I am Saathi, your Paytm voice business assistant. You can speak to me in English, Tamil, Hindi, Kannada, or Telugu. How can I help your business today?`,
+      language: 'en',
+      timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    },
+  ]);
+
   const [inputText, setInputText] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState<IndianLanguage>(
+    merchant.primaryLanguage || 'en'
+  );
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(true);
-  const [speechSpeed, setSpeechSpeed] = useState<number>(1.0);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
-  // Merchant Voice Authentication State (PIN: 1947)
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [showPinModal, setShowPinModal] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  // Chat message history
-  const [messages, setMessages] = useState<AgentChatMessage[]>([]);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-
-  // Initialize welcoming message on language or merchant change
-  useEffect(() => {
-    const greetings: Record<IndianLanguage, string> = {
-      hi: `नमस्ते ${merchant.ownerName} जी! मैं आपका पेटीएम बिजनेस वॉइस असिस्टेंट हूँ। आप मुझसे आज की बिक्री, साउंडबॉक्स पेमेंट, सेटलमेंट स्टेटस, उधारी खाता, या बिजनेस बढ़ाने के बारे में पूछ सकते हैं।`,
-      ta: `வணக்கம் ${merchant.ownerName}, நான் உங்கள் வணிக வாய்ஸ் அசிஸ்டன்ட். இன்றைய வசூல், சவுண்ட்பாக்ஸ், செட்டில்மென்ட், அல்லது கடன் பாக்கி பற்றி என்னிடம் கேட்கலாம்.`,
-      kn: `ನಮಸ್ಕಾರ ${merchant.ownerName} ಅವರೇ! ನಾನು ನಿಮ್ಮ ಪೇಟಿಎಂ ಬಿಸಿನೆಸ್ ವಾಯ್ಸ್ ಅಸಿಸ್ಟೆಂಟ್. ಇಂದಿನ ಕಲೆಕ್ಷನ್, ಸೌಂಡ್‌ಬಾಕ್ಸ್, ಸೆಟಲ್ಮೆಂಟ್ ಅಥವಾ ಖಾತಾ ಬಾಕಿ ಬಗ್ಗೆ ಕೇಳಿ.`,
-      te: `నమస్కారం ${merchant.ownerName} గారు! నేను మీ పేటీఎం బిజినెస్ వాయిస్ అసిస్టెంట్. ఈ రోజు వసూళ్లు, సౌండ్‌బాక్స్, సెటిల్మెంట్ లేదా ఖాతా బాకీల గురించి నన్ను అడగండి.`,
-      en: `Hello ${merchant.ownerName}! I am your Paytm Merchant Intelligence voice business companion. Ask me anything about collections, Soundbox audio payments, settlement reconciliations, or Khata credit.`,
-    };
-
-    setMessages([
-      {
-        id: 'msg-welcome',
-        sender: 'assistant',
-        content: greetings[selectedLanguage] || greetings.hi,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        thoughtTrace: {
-          agentName: 'Merchant Orchestrator',
-          intentIdentified: 'VOICE_SESSION_INITIALIZED',
-          deterministicVerification: `Strict Tenant Isolation Active: MID ${merchant.mid}`,
-        },
-      },
-    ]);
-  }, [selectedLanguage, merchant]);
-
-  // Scroll to bottom
-  useEffect(() => {
+  // Auto-scroll chat
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isProcessing]);
+  };
 
-  // Handle initial prompt if opened via shortcut
+  useEffect(() => {
+    if (isOpen) {
+      scrollToBottom();
+    }
+  }, [messages, isOpen]);
+
+  // Handle external trigger prompts
   useEffect(() => {
     if (initialPrompt && isOpen) {
       handleSendQuery(initialPrompt, false);
     }
   }, [initialPrompt, isOpen]);
 
-  // Setup Web Speech Recognition
+  // Clean up on unmount or drawer close
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      const langMap: Record<IndianLanguage, string> = {
-        hi: 'hi-IN',
-        ta: 'ta-IN',
-        kn: 'kn-IN',
-        te: 'te-IN',
-        en: 'en-IN',
-      };
-      recognition.lang = langMap[selectedLanguage] || 'hi-IN';
-
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        setInputText(transcript);
-        if (event.results[0].isFinal) {
-          setIsListening(false);
-          handleSendQuery(transcript, true);
-        }
-      };
-
-      recognition.onerror = (e: any) => {
-        console.warn('Speech recognition event:', e.error);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-    } else {
-      setSpeechSupported(false);
-    }
-
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
+      stopSpeaking();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
       }
     };
-  }, [selectedLanguage]);
+  }, []);
 
-  // Toggle listening
-  const toggleListening = () => {
-    if (!speechSupported) {
-      alert('Speech recognition is not supported in this browser. Please type your question.');
-      return;
-    }
-    if (isListening) {
-      recognitionRef.current?.stop();
+  // MediaRecorder Voice Input (Sarvam Saaras v4 STT)
+  const startRecording = async () => {
+    stopSpeaking();
+    audioChunksRef.current = [];
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Microphone recording is not supported in this browser. Please type your query.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/wav';
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+        }
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (audioBlob.size > 0) {
+          await processRecordedAudio(audioBlob);
+        }
+      };
+
+      recorder.start(250);
+      setIsListening(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 25) {
+            stopRecording();
+            return 25;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.warn('Microphone error:', err);
       setIsListening(false);
-    } else {
-      setInputText('');
-      recognitionRef.current?.start();
+      alert('Could not access microphone. Please enable microphone permissions in your browser.');
     }
   };
 
-  // Text-to-speech audio player
-  const speakText = (text: string, lang: IndianLanguage) => {
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsListening(false);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const processRecordedAudio = async (blob: Blob) => {
+    setIsProcessing(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string;
+
+        // Add user voice input indicator message
+        const tempMsgId = `usr-${Date.now()}`;
+        const userMsg: AgentChatMessage = {
+          id: tempMsgId,
+          sender: 'user',
+          content: '🎙️ Spoken question (processing via Sarvam Saaras v4)...',
+          language: selectedLanguage,
+          timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          isVoiceInput: true,
+        };
+        setMessages((prev) => [...prev, userMsg]);
+
+        const result = await api.queryVoice({
+          merchantId: merchant.id,
+          language: selectedLanguage,
+          audioBase64: base64Audio,
+        });
+
+        if (result) {
+          // Update user message with recognized transcript
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempMsgId
+                ? { ...m, content: result.recognizedTranscript || '🎙️ Spoken question' }
+                : m
+            )
+          );
+
+          // Add assistant message
+          const assistantMsg: AgentChatMessage = {
+            id: `asst-${Date.now()}`,
+            sender: 'assistant',
+            content: result.responseText,
+            language: result.language,
+            timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            thoughtTrace: {
+              agentName: result.agentName,
+              intentIdentified: result.intentIdentified,
+              toolInvoked: 'Deterministic Financial Analytics Engine',
+              deterministicVerification: 'Verified against core tenant database',
+            },
+            actionCard: result.actionCard,
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+
+          if (autoSpeak && (result.audioBase64 || result.spokenResponseText)) {
+            playAudioResponse(result.spokenResponseText || result.responseText, result.audioBase64);
+          }
+        }
+        setIsProcessing(false);
+      };
+    } catch (err: any) {
+      console.error('Audio processing failed:', err);
+      setIsProcessing(false);
+    }
+  };
+
+  const stopSpeaking = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  };
+
+  const playAudioResponse = (spokenText: string, audioBase64?: string | null) => {
+    stopSpeaking();
+
+    if (audioBase64) {
+      try {
+        const audioUrl = audioBase64.startsWith('data:audio')
+          ? audioBase64
+          : `data:audio/wav;base64,${audioBase64}`;
+        const audio = new Audio(audioUrl);
+        audioPlayerRef.current = audio;
+        setIsSpeaking(true);
+
+        audio.onended = () => setIsSpeaking(false);
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          fallbackSpeech(spokenText);
+        };
+
+        audio.play().catch(() => fallbackSpeech(spokenText));
+        return;
+      } catch {
+        fallbackSpeech(spokenText);
+        return;
+      }
+    }
+
+    fallbackSpeech(spokenText);
+  };
+
+  const fallbackSpeech = (text: string) => {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
 
-    // Clean markdown asterisks for spoken voice
-    const cleanSpeech = text.replace(/\*\*/g, '').replace(/###/g, '');
-
-    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
+    const clean = text.replace(/\*\*/g, '').replace(/###/g, '');
+    const utterance = new SpeechSynthesisUtterance(clean);
     const langMap: Record<IndianLanguage, string> = {
+      en: 'en-IN',
       hi: 'hi-IN',
       ta: 'ta-IN',
       kn: 'kn-IN',
       te: 'te-IN',
-      en: 'en-IN',
     };
-    utterance.lang = langMap[lang] || 'hi-IN';
-    utterance.rate = speechSpeed;
-    utterance.pitch = 1.05;
+    utterance.lang = langMap[selectedLanguage] || 'en-IN';
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
 
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -200,46 +308,9 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
     window.speechSynthesis.speak(utterance);
   };
 
-  const stopSpeaking = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    }
-  };
-
-  // Authenticate PIN
-  const handleVerifyPin = (pin: string) => {
-    if (pin === '1947') {
-      setIsAuthenticated(true);
-      setShowPinModal(false);
-      setPinInput('');
-
-      // Add system message
-      const authMsg: AgentChatMessage = {
-        id: `auth-${Date.now()}`,
-        sender: 'assistant',
-        content:
-          selectedLanguage === 'hi'
-            ? `✓ वॉइस पिन सत्यापित! ${merchant.ownerName} जी की पहचान की पुष्टि हो गई है। अब आप संवेदनशील वित्तीय कार्य अधिकृत कर सकते हैं।`
-            : `✓ Voice PIN Verified! Identity confirmed for ${merchant.ownerName}. You can now view sensitive banking details and authorize financial actions.`,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, authMsg]);
-    } else {
-      alert('Invalid Voice PIN. Default PIN for testing is 1947.');
-    }
-  };
-
-  // Send query to Agentic AI system
+  // Send typed query to Agentic AI system
   const handleSendQuery = async (queryText: string, fromVoice = false) => {
     if (!queryText.trim()) return;
-
-    // Check if user is typing PIN directly
-    if (queryText.trim() === '1947') {
-      handleVerifyPin('1947');
-      setInputText('');
-      return;
-    }
 
     const userMsg: AgentChatMessage = {
       id: `usr-${Date.now()}`,
@@ -262,11 +333,6 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
       });
 
       if (result) {
-        // If sensitive and requires authentication
-        if (result.requiresAuthentication && !isAuthenticated) {
-          setShowPinModal(true);
-        }
-
         const assistantMsg: AgentChatMessage = {
           id: `asst-${Date.now()}`,
           sender: 'assistant',
@@ -284,12 +350,9 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
 
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // Auto-speak response if enabled
-        if (autoSpeak && result.spokenResponseText) {
-          speakText(result.spokenResponseText, result.language);
+        if (autoSpeak) {
+          playAudioResponse(result.spokenResponseText || result.responseText, result.audioBase64);
         }
-      } else {
-        throw new Error('Agent execution failed');
       }
     } catch (err: any) {
       const errorMsg: AgentChatMessage = {
@@ -311,12 +374,20 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
     IndianLanguage,
     { label: string; prompt: string }[]
   > = {
+    en: [
+      { label: '📊 Collections', prompt: "What are today's total collections and successful payments?" },
+      { label: '⚠️ Settlement Check', prompt: 'Investigate the settlement discrepancy on my recent batch.' },
+      { label: '📅 Cash Flow Forecast', prompt: "Forecast tomorrow's collections after daily loan EMI deduction." },
+      { label: '📖 Khata Due Book', prompt: 'Which customers have overdue store credit in Khata? Draft a payment reminder.' },
+      { label: '🚀 Growth Analysis', prompt: 'How is my business performing and what are my peak sales hours?' },
+      { label: '🎙️ Daily Briefing', prompt: 'Give me my daily business briefing summary.' },
+    ],
     hi: [
       { label: '📊 आज की बिक्री', prompt: 'आज की कुल बिक्री और साउंडबॉक्स कलेक्शन कितना रहा?' },
-      { label: '⚠️ सेटलमेंट विसंगति', prompt: '27 अक्टूबर के सेटलमेंट में क्या गड़बड़ हुई है? जांच करो' },
-      { label: '📅 कल का कैश फ्लो', prompt: 'कल की अनुमानित बिक्री और ₹350 लोन EMI कटने के बाद क्या बचेगा?' },
+      { label: '⚠️ सेटलमेंट विसंगति', prompt: 'सेटलमेंट में क्या अंतर है? जांच करो' },
+      { label: '📅 कल का कैश फ्लो', prompt: 'कल की अनुमानित बिक्री और लोन EMI कटने के बाद क्या बचेगा?' },
       { label: '📖 उधारी (खाता)', prompt: 'खाता बही में किस ग्राहक का बकाया बाकी है? रिमाइंडर तैयार करो' },
-      { label: '🚀 त्योहार ऑफर', prompt: 'आने वाले त्योहार के लिए 5% कैशबैक प्रोमो कैंपेन तैयार करो' },
+      { label: '🚀 दुकान की वृद्धि', prompt: 'मेरी दुकान की बिक्री बढ़ाने के लिए क्या सुझाव हैं?' },
       { label: '🎙️ बिजनेस ब्रीफिंग', prompt: 'मेरा आज का बिजनेस ब्रीफिंग सुनाओ' },
     ],
     ta: [
@@ -324,184 +395,107 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
       { label: '⚠️ செட்டில்மென்ட்', prompt: 'செட்டில்மென்ட் தொகையில் உள்ள வித்தியாசத்தை விசாரி' },
       { label: '📅 ரொக்க வரவு', prompt: 'நாளை வரவு மற்றும் லோன் EMI கழிவு எவ்வளவு?' },
       { label: '📖 கடன் பாக்கி', prompt: 'கடன் பாக்கி வைத்துள்ள வாடிக்கையாளர்களுக்கு நினைவூட்டல் அனுப்பு' },
-      { label: '🚀 வியாபார வளர்ச்சி', prompt: 'வியாபாரத்தை உயர்த்த என்ன புதிய ஆஃபர் தொடங்கலாம்?' },
+      { label: '🚀 வியாபார வளர்ச்சி', prompt: 'வியாபாரத்தை உயர்த்த என்ன புதிய வாய்ப்புகள் உள்ளன?' },
     ],
     kn: [
       { label: '📊 ಇಂದಿನ ಸಂಗ್ರಹ', prompt: 'ಇಂದಿನ ಒಟ್ಟು ಕಲೆಕ್ಷನ್ ಮತ್ತು ಸೌಂಡ್‌ಬಾಕ್ಸ್ ಮೊತ್ತ ಎಷ್ಟು?' },
       { label: '⚠️ ಸೆಟಲ್ಮೆಂಟ್', prompt: 'ಸೆಟಲ್ಮೆಂಟ್ ವ್ಯತ್ಯಾಸವನ್ನು ತನಿಖೆ ಮಾಡಿ' },
       { label: '📅 ಕ್ಯಾಶ್ ಫ್ಲೋ', prompt: 'ನಾಳೆಯ ಅಂದಾಜು ಕಲೆಕ್ಷನ್ ಮತ್ತು ಸಾಲದ ಇಎಂಐ ವಿವರ ತಿಳಿಸಿ' },
       { label: '📖 ಖಾತಾ ಬಾಕಿ', prompt: 'ಖಾತಾ ಬಾಕಿ ಇರುವವರಿಗೆ ಪಾವತಿ ಜ್ಞಾಪನೆ ಸಿದ್ಧಪಡಿಸಿ' },
-      { label: '🚀 ಬೆಳವಣಿಗೆ ಆಫರ್', prompt: 'ಹಬ್ಬದ ಸೀಸನ್‌ಗಾಗಿ ವಿಶೇಷ ಪ್ರಚಾರ ಅಭಿಯಾನ ಆರಂಭಿಸಿ' },
+      { label: '🚀 ಬೆಳವಣಿಗೆ ಆಫರ್', prompt: 'ವ್ಯಾಪಾರ ಬೆಳೆಸಲು ವಿಶೇಷ ಶಿಫಾರಸುಗಳನ್ನು ನೀಡಿ' },
     ],
     te: [
       { label: '📊 నేటి వసూళ్లు', prompt: 'ఈ రోజు మొత్తం వసూళ్లు మరియు సౌండ్‌బాక్స్ కలెక్షన్ ఎంత?' },
       { label: '⚠️ సెటిల్మెంట్', prompt: 'సెటిల్మెంట్ వ్యత్యాసం పై విచారణ ప్రారంభించు' },
       { label: '📅 నగదు ప్రవాహం', prompt: 'రేపటి అంచనా వసూలు మరియు లోన్ ఈఎంఐ ఎంత?' },
       { label: '📖 ఖాతా బాకీ', prompt: 'ఖాతా పుస్తకంలో బాకీ ఉన్నవారికి రిమైండర్ పంపు' },
-      { label: '🚀 బిజినెస్ గ్రోత్', prompt: 'వ్యాపార పెరుగుదల కోసం పండుగ ఆఫర్ రూపొందించు' },
-    ],
-    en: [
-      { label: '📊 Collections', prompt: "What are today's total collections and Soundbox audio payments?" },
-      { label: '⚠️ Settlement Check', prompt: 'Investigate the settlement discrepancy on the Oct 27 batch.' },
-      { label: '📅 Cash Flow Forecast', prompt: "Forecast tomorrow's collections after daily loan EMI deduction." },
-      { label: '📖 Khata Due Book', prompt: 'Who has overdue store credit in Khata? Draft a payment reminder.' },
-      { label: '🚀 Growth Campaign', prompt: 'Prepare a 5% festive cashback campaign draft for my approval.' },
-      { label: '🎙️ Daily Briefing', prompt: 'Give me my daily business briefing summary.' },
+      { label: '🚀 బిజినెస్ గ్రోత్', prompt: 'వ్యాపార పెరుగుదల కోసం సలహాలు ఇవ్వండి' },
     ],
   };
 
-  const activePrompts = capabilityPrompts[selectedLanguage] || capabilityPrompts.hi;
+  const activePrompts = capabilityPrompts[selectedLanguage] || capabilityPrompts.en;
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[500px] bg-white border-l border-slate-200 shadow-2xl flex flex-col font-sans">
       {/* Drawer Top Header */}
       <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/90">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#002970] text-white flex items-center justify-center shadow-xs">
-            <Sparkles className="w-4 h-4 text-cyan-300" />
+          <div className="w-8 h-8 rounded-xl bg-[#002970] text-white flex items-center justify-center shadow-xs">
+            <Sparkles className="w-4 h-4 text-[#00BAF2]" />
           </div>
           <div>
             <div className="text-xs font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-              <span>Multilingual Voice Business Assistant</span>
+              <span>Multilingual Voice Assistant</span>
+              <span className="text-[10px] bg-sky-50 text-sky-700 font-mono px-1.5 py-0.5 rounded border border-sky-100 font-normal">
+                Sarvam AI
+              </span>
             </div>
             <div className="text-[11px] text-slate-500 font-medium">
-              Sarvam AI & Multi-Agent Intelligence · {merchant.businessName}
+              Grounded Paytm Multi-Agent Intelligence · {merchant.businessName}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Voice PIN Authentication Indicator */}
-          <button
-            onClick={() => setShowPinModal(true)}
-            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-colors ${
-              isAuthenticated
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-amber-50 text-amber-800 border border-amber-200'
-            }`}
-            title="Merchant Voice Security Token"
+          {/* Language Selector */}
+          <select
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value as IndianLanguage)}
+            className="text-xs font-medium px-2 py-1 bg-white border border-slate-200 rounded-md text-slate-700 cursor-pointer"
           >
-            {isAuthenticated ? <Unlock className="w-3 h-3 text-emerald-600" /> : <Lock className="w-3 h-3 text-amber-600" />}
-            <span>{isAuthenticated ? 'PIN Verified' : 'Voice PIN'}</span>
-          </button>
+            <option value="en">English (Default)</option>
+            <option value="ta">தமிழ் (Tamil)</option>
+            <option value="hi">हिन्दी (Hindi)</option>
+            <option value="kn">ಕನ್ನಡ (Kannada)</option>
+            <option value="te">తెలుగు (Telugu)</option>
+          </select>
 
+          {/* Close Drawer Button */}
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
+            onClick={() => {
+              stopSpeaking();
+              onClose();
+            }}
+            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Language & Voice Settings Toolbar */}
-      <div className="px-4 py-2 bg-white border-b border-slate-100 flex items-center justify-between gap-2 text-xs">
-        {/* Language Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {[
-            { code: 'hi', label: 'हिन्दी' },
-            { code: 'en', label: 'English' },
-            { code: 'ta', label: 'தமிழ்' },
-            { code: 'kn', label: 'ಕನ್ನಡ' },
-            { code: 'te', label: 'తెలుగు' },
-          ].map((l) => (
-            <button
-              key={l.code}
-              onClick={() => setSelectedLanguage(l.code as IndianLanguage)}
-              className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap ${
-                selectedLanguage === l.code
-                  ? 'bg-[#002970] text-white font-semibold'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {l.label}
-            </button>
-          ))}
+      {/* Security & Grounded Numbers Notice */}
+      <div className="px-4 py-2 bg-blue-50/60 border-b border-blue-100/70 text-[11px] text-slate-600 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Grounded in verified SQLite ledger · Sensitive actions require on-screen approval</span>
         </div>
-
-        {/* Voice Toggles */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setAutoSpeak(!autoSpeak)}
-            className={`p-1 rounded text-[11px] flex items-center gap-1 font-medium ${
-              autoSpeak ? 'text-[#002970] bg-blue-50' : 'text-slate-400'
-            }`}
-            title="Auto-speak incoming assistant responses"
-          >
-            <Volume2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Auto-Speak</span>
-          </button>
-
-          <select
-            value={speechSpeed}
-            onChange={(e) => setSpeechSpeed(Number(e.target.value))}
-            className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600"
-            title="Speech Playback Speed"
-          >
-            <option value="0.9">0.9x</option>
-            <option value="1.0">1.0x</option>
-            <option value="1.15">1.15x</option>
-          </select>
-        </div>
+        <button
+          onClick={() => setAutoSpeak(!autoSpeak)}
+          className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded cursor-pointer ${
+            autoSpeak ? 'bg-[#002970] text-white' : 'bg-slate-200 text-slate-600'
+          }`}
+          title="Toggle automatic speech playback"
+        >
+          {autoSpeak ? <Volume2 className="w-3 h-3 text-[#00BAF2]" /> : <VolumeX className="w-3 h-3" />}
+          <span>{autoSpeak ? 'Voice ON' : 'Voice Mute'}</span>
+        </button>
       </div>
 
-      {/* Speaking Indicator Bar */}
-      {isSpeaking && (
-        <div className="px-4 py-2 bg-[#002970] text-white flex items-center justify-between text-xs shadow-xs">
-          <div className="flex items-center gap-2">
-            <Volume2 className="w-4 h-4 animate-bounce text-cyan-300" />
-            <span className="font-semibold text-cyan-100">
-              Speaking in {selectedLanguage.toUpperCase()} voice...
-            </span>
-          </div>
-          <button
-            onClick={stopSpeaking}
-            className="px-2 py-0.5 bg-white/20 hover:bg-white/30 text-white rounded text-[11px] font-semibold"
-          >
-            Stop Audio
-          </button>
-        </div>
-      )}
-
-      {/* Conversation Stream */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+      {/* Chat Messages Log */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg) => (
           <div
             key={msg.id}
             className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
           >
-            {/* Sender Metadata */}
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1 px-1">
-              {msg.sender === 'user' ? (
-                <>
-                  <span className="font-medium text-slate-700">{merchant.ownerName}</span>
-                  {msg.isVoiceInput && (
-                    <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-medium">
-                      Voice Input
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Bot className="w-3.5 h-3.5 text-[#002970]" />
-                  <span className="font-semibold text-slate-800">
-                    {msg.thoughtTrace?.agentName || 'Paytm Assistant'}
-                  </span>
-                </>
-              )}
-              <span className="text-slate-300">·</span>
-              <span className="font-mono text-[10px] text-slate-600">{msg.timestamp}</span>
-            </div>
-
-            {/* Bubble Content */}
             <div
-              className={`max-w-[92%] rounded-lg p-3.5 leading-relaxed ${
+              className={`max-w-[85%] rounded-2xl p-3.5 ${
                 msg.sender === 'user'
                   ? 'bg-[#002970] text-white shadow-xs'
                   : 'bg-slate-50 border border-slate-200/90 text-slate-900'
               }`}
             >
-              <div className="whitespace-pre-line text-xs font-normal">{msg.content}</div>
+              <div className="whitespace-pre-line text-xs font-normal leading-relaxed">{msg.content}</div>
 
               {/* Agent Thought & Tool Trace */}
               {msg.thoughtTrace && (
@@ -519,23 +513,23 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
               {msg.sender === 'assistant' && (
                 <div className="mt-2.5 pt-1.5 flex items-center justify-end">
                   <button
-                    onClick={() => speakText(msg.content, msg.language || selectedLanguage)}
-                    className="inline-flex items-center gap-1 text-[11px] text-[#002970] font-semibold hover:underline"
+                    onClick={() => playAudioResponse(msg.content)}
+                    className="inline-flex items-center gap-1 text-[11px] text-[#00BAF2] font-semibold hover:underline cursor-pointer"
                   >
                     <Volume2 className="w-3.5 h-3.5" />
-                    <span>Replay Audio</span>
+                    <span>Replay Spoken Audio</span>
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Interactive Action Approval Card rendered directly inside conversation */}
+            {/* Interactive Action Approval Card: Direct On-Screen Confirmation */}
             {msg.actionCard && (
-              <div className="mt-2.5 max-w-[92%] w-full bg-amber-50 border border-amber-300 rounded-lg p-3.5 text-xs text-amber-950 shadow-sm">
+              <div className="mt-2.5 max-w-[92%] w-full bg-amber-50 border border-amber-300 rounded-xl p-3.5 text-xs text-amber-950 shadow-xs">
                 <div className="flex items-center justify-between pb-1.5 border-b border-amber-200">
                   <span className="font-bold flex items-center gap-1.5 text-amber-900">
                     <AlertTriangle className="w-4 h-4 text-amber-700" />
-                    <span>Explicit Merchant Authorization Required</span>
+                    <span>On-Screen Merchant Confirmation Required</span>
                   </span>
                   <span className="font-mono text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
                     {msg.actionCard.status}
@@ -543,27 +537,35 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
                 </div>
 
                 <div className="mt-2 font-bold text-slate-900">{msg.actionCard.title}</div>
-                <p className="mt-1 text-[11px] text-slate-700">{msg.actionCard.description}</p>
+                <p className="mt-1 text-[11px] text-slate-700 leading-relaxed">{msg.actionCard.description}</p>
 
                 <div className="mt-3 pt-2 border-t border-amber-200/80 flex items-center justify-end gap-2">
                   <button
                     onClick={() => onRejectAction(msg.actionCard!.id)}
-                    className="px-3 py-1 text-[11px] font-medium bg-white text-slate-700 border border-slate-300 rounded hover:bg-slate-100"
+                    className="px-3 py-1.5 text-[11px] font-medium bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-100 cursor-pointer"
                   >
-                    Decline
+                    Cancel
                   </button>
                   <button
-                    onClick={() => {
-                      if (!isAuthenticated) {
-                        setShowPinModal(true);
-                        return;
-                      }
-                      onApproveAction(msg.actionCard!.id);
+                    onClick={async () => {
+                      await onApproveAction(msg.actionCard!.id);
+                      setMessages((prev) =>
+                        prev.map((m) =>
+                          m.id === msg.id && m.actionCard
+                            ? { ...m, actionCard: { ...m.actionCard, status: 'EXECUTED' } }
+                            : m
+                        )
+                      );
                     }}
-                    className="px-3.5 py-1 text-[11px] font-bold bg-[#002970] text-white rounded hover:bg-[#001f52] shadow-xs flex items-center gap-1"
+                    disabled={msg.actionCard.status === 'EXECUTED'}
+                    className={`px-3.5 py-1.5 text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                      msg.actionCard.status === 'EXECUTED'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-[#002970] text-white hover:bg-[#001f52]'
+                    }`}
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Authorize & Execute Action</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#00BAF2]" />
+                    <span>{msg.actionCard.status === 'EXECUTED' ? 'Executed & Logged' : 'Confirm & Execute'}</span>
                   </button>
                 </div>
               </div>
@@ -572,9 +574,9 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
         ))}
 
         {isProcessing && (
-          <div className="flex items-center gap-2 text-slate-600 text-xs py-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-            <div className="w-2.5 h-2.5 rounded-full bg-[#002970] animate-ping" />
-            <span>Agent Orchestrator is verifying data and synthesizing Indian speech...</span>
+          <div className="flex items-center gap-2 text-slate-600 text-xs py-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#00BAF2] animate-ping" />
+            <span>Verifying records with Sarvam AI...</span>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -586,26 +588,25 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
           <button
             key={i}
             onClick={() => handleSendQuery(p.prompt, false)}
-            className="whitespace-nowrap px-2.5 py-1 bg-white border border-slate-200 rounded-md text-slate-700 hover:text-slate-900 hover:border-[#002970] transition-colors"
+            className="whitespace-nowrap px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-slate-700 hover:text-slate-900 hover:border-[#002970] transition-colors cursor-pointer"
           >
             {p.label}
           </button>
         ))}
       </div>
 
-      {/* Voice Input & Audio Visualizer Control Bar */}
+      {/* Voice Input & Audio Wave Control Bar */}
       <div className="p-4 bg-white border-t border-slate-200">
-        {/* Dynamic 16-Bar Audio Equalizer Visualizer */}
+        {/* Audio Equalizer Visualizer during MediaRecorder recording */}
         {isListening && (
-          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
               <span className="text-xs font-bold text-red-900">
-                Listening in {selectedLanguage.toUpperCase()}... Speak naturally
+                Listening in {selectedLanguage.toUpperCase()}... ({recordingSeconds}s) Tap mic to send
               </span>
             </div>
 
-            {/* Simulated live audio frequency wave bars */}
             <div className="flex items-center gap-0.5 h-5">
               {[8, 14, 20, 12, 18, 24, 10, 16, 22, 14, 18, 26, 12, 16, 20, 8].map((h, idx) => (
                 <span
@@ -623,17 +624,17 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
         )}
 
         <div className="flex items-center gap-2">
-          {/* Push-to-Talk Mic Button */}
+          {/* MediaRecorder Mic Button */}
           <button
             onClick={toggleListening}
-            className={`p-3 rounded-lg transition-all ${
+            className={`p-3 rounded-xl transition-all cursor-pointer ${
               isListening
                 ? 'bg-red-600 text-white shadow-lg animate-pulse'
                 : 'bg-blue-50 text-[#002970] hover:bg-blue-100 border border-blue-200'
             }`}
-            title="Push to speak in Indian languages"
+            title="Push to speak (Sarvam Saaras v4)"
           >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-[#00BAF2]" />}
           </button>
 
           {/* Text Input */}
@@ -655,78 +656,21 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
                 ? 'ಪ್ರಶ್ನೆ ಕೇಳಿ (ಉದಾ. ಇಂದಿನ ಕಲೆಕ್ಷನ್ ಎಷ್ಟು?)...'
                 : selectedLanguage === 'te'
                 ? 'ప్రశ్న అడగండి (ఉదా. నేటి కలెక్షన్స్ ఎంత?)...'
-                : 'Ask anything or speak (e.g., today collections, settlements)...'
+                : 'Ask anything or speak (e.g. today collections, settlements)...'
             }
-            className="flex-1 px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002970]"
+            className="flex-1 px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:border-[#00BAF2]"
           />
 
           {/* Send Button */}
           <button
             onClick={() => handleSendQuery(inputText, false)}
             disabled={!inputText.trim() || isProcessing}
-            className="p-2.5 bg-[#002970] text-white rounded-lg hover:bg-[#001f52] disabled:opacity-40 transition-colors"
+            className="p-2.5 bg-[#00BAF2] hover:bg-[#0099cc] text-white rounded-xl disabled:opacity-40 transition-colors cursor-pointer"
           >
             <Send className="w-4 h-4" />
           </button>
         </div>
       </div>
-
-      {/* Voice Security PIN Verification Modal */}
-      {showPinModal && (
-        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 text-xs">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-[#002970]" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  Merchant Voice PIN Authentication
-                </h3>
-              </div>
-              <button onClick={() => setShowPinModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="mt-3 text-slate-600 leading-relaxed">
-              To protect sensitive financial records and authorize actions for{' '}
-              <strong className="text-slate-900">{merchant.ownerName}</strong>, please enter or speak your 4-digit Voice PIN.
-            </p>
-
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="block text-slate-700 font-medium mb-1">
-                  4-Digit Security PIN (Default Demo: 1947)
-                </label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  value={pinInput}
-                  onChange={(e) => setPinInput(e.target.value)}
-                  placeholder="1947"
-                  className="w-full text-center tracking-widest text-lg font-mono font-bold py-2 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002970]"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPinModal(false)}
-                  className="px-3 py-1.5 bg-slate-100 text-slate-700 font-medium rounded-md hover:bg-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleVerifyPin(pinInput)}
-                  className="px-4 py-1.5 bg-[#002970] text-white font-semibold rounded-md hover:bg-[#001f52]"
-                >
-                  Verify Identity
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

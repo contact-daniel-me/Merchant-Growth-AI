@@ -1,6 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MerchantProfile, IndianLanguage, AgentChatMessage } from '../types/index.ts';
-import { translations } from '../utils/translations.ts';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  MerchantProfile,
+  IndianLanguage,
+  CustomerCreditRecord,
+  SettlementBatch,
+} from '../types/index.ts';
 import { api } from '../services/api.ts';
 import {
   Mic,
@@ -8,18 +12,18 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
-  Send,
-  RotateCcw,
-  Radio,
   ArrowRight,
-  HelpCircle,
+  ShieldCheck,
   CheckCircle2,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 
 interface SimpleVoiceAssistantScreenProps {
   merchant: MerchantProfile;
   currentLanguage: IndianLanguage;
-  onSelectLanguage: (lang: IndianLanguage) => void;
+  creditRecords: CustomerCreditRecord[];
+  settlements: SettlementBatch[];
   onApproveAction: (actionId: string) => Promise<void>;
   onRejectAction: (actionId: string) => Promise<void>;
 }
@@ -27,106 +31,237 @@ interface SimpleVoiceAssistantScreenProps {
 export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProps> = ({
   merchant,
   currentLanguage,
-  onSelectLanguage,
+  creditRecords,
+  settlements,
   onApproveAction,
   onRejectAction,
 }) => {
-  const t = translations[currentLanguage] || translations.hi;
-
-  const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [lastRecognizedQuery, setLastRecognizedQuery] = useState<string>('');
+  const [lastRecognizedQuery, setLastRecognizedQuery] = useState('');
+  const [inputText, setInputText] = useState('');
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
   const [lastAnswer, setLastAnswer] = useState<{
     text: string;
     spokenText: string;
     actionCard?: any;
+    audioBase64?: string | null;
   } | null>(null);
 
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  // Setup Web Speech Recognition
-  useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      const langMap: Record<IndianLanguage, string> = {
-        hi: 'hi-IN',
-        ta: 'ta-IN',
-        kn: 'kn-IN',
-        te: 'te-IN',
-        en: 'en-IN',
-      };
-      recognition.lang = langMap[currentLanguage] || 'hi-IN';
-
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        setLastRecognizedQuery(transcript);
-        setInputText(transcript);
-        if (event.results[0].isFinal) {
-          setIsListening(false);
-          handleProcessQuery(transcript);
-        }
-      };
-
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
-      recognitionRef.current = recognition;
+  // Translations
+  const labels: Record<
+    IndianLanguage,
+    {
+      assistantHeading: string;
+      assistantSubheading: string;
+      tapToSpeak: string;
+      listening: string;
+      stopSpeaking: string;
+      suggestedQuestionsHeading: string;
+      orTypeHere: string;
+      askButton: string;
+      sarvamNotice: string;
     }
+  > = {
+    en: {
+      assistantHeading: 'Voice Business Assistant',
+      assistantSubheading: 'Speak naturally to check your sales, pending money, or send reminders',
+      tapToSpeak: 'Tap to Speak',
+      listening: 'Listening... Tap to finish',
+      stopSpeaking: 'Stop Audio',
+      suggestedQuestionsHeading: 'Frequently Asked Questions',
+      orTypeHere: 'Or type your question here...',
+      askButton: 'Ask',
+      sarvamNotice: 'Powered by Sarvam AI · Saaras v4 STT & Bulbul v4 TTS',
+    },
+    hi: {
+      assistantHeading: 'बोलकर पूछें, तुरंत उत्तर पाएं',
+      assistantSubheading: 'अपनी दुकान की बिक्री, अटका हुआ पैसा या खाता बही के बारे में सीधे पूछें',
+      tapToSpeak: 'बोलने के लिए दबाएं',
+      listening: 'सुन रहे हैं... समाप्त करने के लिए दबाएं',
+      stopSpeaking: 'आवाज़ बंद करें',
+      suggestedQuestionsHeading: 'अक्सर पूछे जाने वाले सवाल',
+      orTypeHere: 'या यहाँ अपना सवाल लिखें...',
+      askButton: 'पूछें',
+      sarvamNotice: 'सर्वम एआई द्वारा संचालित · Saaras v4 STT और Bulbul v4 TTS',
+    },
+    ta: {
+      assistantHeading: 'குரல் வணிக உதவியாளர்',
+      assistantSubheading: 'விற்பனை, வர வேண்டிய பணம் மற்றும் வாடிக்கையாளர் கடன்களை எளிதாக கேளுங்கள்',
+      tapToSpeak: 'பேச அழுத்தவும்',
+      listening: 'கேட்கிறது... முடிக்க அழுத்தவும்',
+      stopSpeaking: 'ஆடியோவை நிறுத்து',
+      suggestedQuestionsHeading: 'அடிக்கடி கேட்கப்படும் கேள்விகள்',
+      orTypeHere: 'அல்லது உங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும்...',
+      askButton: 'கேட்க',
+      sarvamNotice: 'சர்வம் AI தொழில்நுட்பம் · Saaras v4 STT & Bulbul v4 TTS',
+    },
+    kn: {
+      assistantHeading: 'ಧ್ವನಿ ವ್ಯಾಪಾರ ಸಹಾಯಕ',
+      assistantSubheading: 'ನಿಮ್ಮ ಮಾರಾಟ, ಬಾಕಿ ಹಣ ಮತ್ತು ಗ್ರಾಹಕರ ಸಾಲದ ವಿವರಗಳನ್ನು ಧ್ವನಿಯ ಮೂಲಕ ಕೇಳಿ',
+      tapToSpeak: 'ಮಾತನಾಡಲು ಒತ್ತಿ',
+      listening: 'ಆಲಿಸಲಾಗುತ್ತಿದೆ... ಮುಗಿಸಲು ಒತ್ತಿ',
+      stopSpeaking: 'ಧ್ವನಿ ನಿಲ್ಲಿಸಿ',
+      suggestedQuestionsHeading: 'ಸಾಮಾನ್ಯವಾಗಿ ಕೇಳಲಾಗುವ ಪ್ರಶ್ನೆಗಳು',
+      orTypeHere: 'ಅಥವಾ ನಿಮ್ಮ ಪ್ರಶ್ನೆಯನ್ನು ಇಲ್ಲಿ ಟೈಪ್ ಮಾಡಿ...',
+      askButton: 'ಕೇಳಿ',
+      sarvamNotice: 'ಸರ್ವಮ್ ಎಐ ಚಾಲಿತ · Saaras v4 STT & Bulbul v4 TTS',
+    },
+    te: {
+      assistantHeading: 'వాయిస్ వ్యాపార సహాయకుడు',
+      assistantSubheading: 'మీ విక్రయాలు, పెండింగ్ బకాయిలు మరియు ఖాతా వివరాలను నోటితో అడగండి',
+      tapToSpeak: 'మాట్లాడటానికి నొక్కండి',
+      listening: 'వింటోంది... ముగించడానికి నొక్కండి',
+      stopSpeaking: 'ఆడియో ఆపండి',
+      suggestedQuestionsHeading: 'తరచుగా అడిగే ప్రశ్నలు',
+      orTypeHere: 'లేదా మీ ప్రశ్నను ఇక్కడ టైప్ చేయండి...',
+      askButton: 'అడగండి',
+      sarvamNotice: 'సర్వం AI ఆధారితం · Saaras v4 STT & Bulbul v4 TTS',
+    },
+  };
 
+  const t = labels[currentLanguage] || labels.en;
+
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      recognitionRef.current?.abort();
+      stopSpeaking();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
     };
-  }, [currentLanguage]);
+  }, []);
+
+  // MediaRecorder Voice Capture
+  const startRecording = async () => {
+    stopSpeaking();
+    setAudioError(null);
+    audioChunksRef.current = [];
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone access is not supported by your browser.');
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/wav';
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+        }
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (audioBlob.size > 0) {
+          await processRecordedAudio(audioBlob);
+        }
+      };
+
+      recorder.start(250);
+      setIsListening(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 25) {
+            // Cap at 25 seconds for snappy STT turnaround
+            stopRecording();
+            return 25;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.warn('Microphone error:', err);
+      setAudioError(err.message || 'Could not access microphone. Please allow microphone permission.');
+      setIsListening(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsListening(false);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+  };
 
   const toggleListening = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopRecording();
     } else {
-      setLastRecognizedQuery('');
-      recognitionRef.current?.start();
+      startRecording();
     }
   };
 
-  const speakText = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
+  const processRecordedAudio = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string;
 
-    const clean = text.replace(/\*\*/g, '').replace(/###/g, '');
-    const utterance = new SpeechSynthesisUtterance(clean);
-    const langMap: Record<IndianLanguage, string> = {
-      hi: 'hi-IN',
-      ta: 'ta-IN',
-      kn: 'kn-IN',
-      te: 'te-IN',
-      en: 'en-IN',
-    };
-    utterance.lang = langMap[currentLanguage] || 'hi-IN';
-    utterance.rate = 0.95;
-    utterance.pitch = 1.05;
+        // Step 1: Send to STT / Voice Query
+        const result = await api.queryVoice({
+          merchantId: merchant.id,
+          language: currentLanguage,
+          audioBase64: base64Audio,
+        });
 
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+        if (result) {
+          setLastRecognizedQuery(result.recognizedTranscript || 'Voice question');
+          setLastAnswer({
+            text: result.responseText,
+            spokenText: result.spokenResponseText || result.responseText,
+            actionCard: result.actionCard,
+            audioBase64: result.audioBase64,
+          });
 
-    window.speechSynthesis.speak(utterance);
+          playSynthesizedAudio(result.spokenResponseText || result.responseText, result.audioBase64);
+        }
+        setIsProcessing(false);
+      };
+    } catch (err: any) {
+      console.error('Audio processing failed:', err);
+      setIsProcessing(false);
+      setAudioError(err.message || 'Voice recognition failed. Please try again.');
+    }
   };
-
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const stopSpeaking = () => {
     if (audioPlayerRef.current) {
@@ -139,30 +274,62 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
     setIsSpeaking(false);
   };
 
-  const playSynthesizedOrFallback = (spokenText: string, audioBase64?: string | null) => {
+  const playSynthesizedAudio = async (spokenText: string, audioBase64?: string | null) => {
     stopSpeaking();
+
+    // 1. Play Sarvam Bulbul v4 Flash base64 audio
     if (audioBase64) {
       try {
-        const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+        const audioUrl = audioBase64.startsWith('data:audio')
+          ? audioBase64
+          : `data:audio/wav;base64,${audioBase64}`;
+        const audio = new Audio(audioUrl);
         audioPlayerRef.current = audio;
-        setIsSpeaking(true);
+
         audio.onended = () => setIsSpeaking(false);
         audio.onerror = () => {
-          setIsSpeaking(false);
-          speakText(spokenText);
+          fallbackSpeech(spokenText);
         };
-        audio.play().catch(() => speakText(spokenText));
+
+        await audio.play();
+        setIsSpeaking(true);
         return;
-      } catch {
-        speakText(spokenText);
-        return;
+      } catch (err) {
+        console.warn('Sarvam audio playback error:', err);
       }
     }
-    speakText(spokenText);
+
+    // 2. Fallback to client speech synthesis
+    fallbackSpeech(spokenText);
+  };
+
+  const fallbackSpeech = (text: string) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+
+    const clean = text.replace(/\*\*/g, '').replace(/###/g, '');
+    const utterance = new SpeechSynthesisUtterance(clean);
+    const langMap: Record<IndianLanguage, string> = {
+      en: 'en-IN',
+      hi: 'hi-IN',
+      ta: 'ta-IN',
+      kn: 'kn-IN',
+      te: 'te-IN',
+    };
+    utterance.lang = langMap[currentLanguage] || 'en-IN';
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleProcessQuery = async (queryText: string) => {
     if (!queryText.trim()) return;
+    stopSpeaking();
     setIsProcessing(true);
     setLastRecognizedQuery(queryText.trim());
 
@@ -178,10 +345,10 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
           text: result.responseText,
           spokenText: result.spokenResponseText || result.responseText,
           actionCard: result.actionCard,
+          audioBase64: result.audioBase64,
         });
 
-        // Automatically narrate spoken answer via Sarvam audio or fallback
-        playSynthesizedOrFallback(result.spokenResponseText || result.responseText, result.audioBase64);
+        playSynthesizedAudio(result.spokenResponseText || result.responseText, result.audioBase64);
       }
     } catch (err: any) {
       setLastAnswer({
@@ -194,54 +361,54 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
     }
   };
 
-  // Section 4: Suggested simple questions
+  // Suggested simple questions
   const suggestedQuestions: Record<IndianLanguage, string[]> = {
-    hi: [
-      'आज मैंने कितना पैसा कमाया?',
-      'मेरा अटका हुआ पैसा कहाँ है?',
-      '27 अक्टूबर के सेटलमेंट में क्या गड़बड़ है?',
-      'मेरी दुकान की बिक्री कैसी चल रही है?',
-      'मैं अपनी बिक्री कैसे बढ़ा सकता हूँ?',
-    ],
     en: [
-      'How much did I earn today?',
-      'Where is my pending money?',
+      'How much money did I receive today?',
+      'Show my pending settlements.',
       'Why is my settlement delayed?',
-      'How is my business doing?',
-      'How can I increase my sales?',
+      'Which customers have outstanding dues?',
+      'How is my business performing?',
+    ],
+    hi: [
+      'आज मैंने कितना पैसा प्राप्त किया?',
+      'मेरा अटका हुआ पैसा कहाँ है?',
+      'सेटलमेंट में क्या गड़बड़ है?',
+      'किन ग्राहकों का उधार बाकी है?',
+      'मेरी दुकान की बिक्री कैसी चल रही है?',
     ],
     ta: [
-      'இன்று நான் எவ்வளவு சம்பாதித்தேன்?',
+      'இன்று நான் எவ்வளவு பணம் பெற்றேன்?',
       'என் வர வேண்டிய பணம் எங்கே?',
       'செட்டில்மென்ட் தாமதத்திற்கு காரணம் என்ன?',
+      'யார் யாருக்கு கடன் பாக்கி உள்ளது?',
       'என் வியாபாரம் எப்படி நடக்கிறது?',
-      'என் விற்பனையை எப்படி அதிகரிக்கலாம்?',
     ],
     kn: [
-      'ಇಂದು ನಾನು ಎಷ್ಟು ಹಣ ಗಳಿಸಿದೆ?',
+      'ಇಂದು ನನಗೆ ಎಷ್ಟು ಹಣ ಬಂದಿದೆ?',
       'ನನ್ನ ಬಾಕಿ ಹಣ ಎಲ್ಲಿದೆ?',
       'ಸೆಟಲ್ಮೆಂಟ್ ವಿಳಂಬಕ್ಕೆ ಕಾರಣವೇನು?',
+      'ಯಾವ ಗ್ರಾಹಕರಿಗೆ ಸಾಲ ಬಾಕಿ ಇದೆ?',
       'ನನ್ನ ವ್ಯಾಪಾರ ಹೇಗಿದೆ?',
-      'ನನ್ನ ಮಾರಾಟವನ್ನು ಹೆಚ್ಚಿಸುವುದು ಹೇಗೆ?',
     ],
     te: [
-      'ఈ రోజు నేను ఎంత సంపాదించాను?',
-      'నా పెండింగ్ డబ్బు ఎక్కడ ఉంది?',
+      'ఈ రోజు నేను ఎంత డబ్బు అందుకున్నాను?',
+      'నా పెండింగ్ బకాయిలు ఎక్కడ ఉన్నాయి?',
       'సెటిల్మెంట్ ఆలస్యానికి కారణం ఏమిటి?',
+      'ఎవరికి అప్పు బకాయి ఉంది?',
       'నా వ్యాపారం ఎలా నడుస్తోంది?',
-      'నా అమ్మకాలను ఎలా పెంచుకోవాలి?',
     ],
   };
 
-  const currentQuestions = suggestedQuestions[currentLanguage] || suggestedQuestions.hi;
+  const currentQuestions = suggestedQuestions[currentLanguage] || suggestedQuestions.en;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-20 md:pb-6 font-sans">
       {/* 1. Friendly Header Card */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 text-center shadow-xs">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-[#002970] text-xs font-bold mb-3">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-[#002970] text-xs font-bold mb-3 border border-blue-100">
           <Sparkles className="w-3.5 h-3.5 text-[#00BAF2]" />
-          <span>Paytm Voice Business Companion</span>
+          <span>{t.sarvamNotice}</span>
         </div>
 
         <h1 className="text-2xl sm:text-3xl font-bold text-[#172B4D] tracking-tight">
@@ -251,11 +418,18 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
           {t.assistantSubheading}
         </p>
 
+        {audioError && (
+          <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs max-w-md mx-auto text-center flex items-center justify-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{audioError}</span>
+          </div>
+        )}
+
         {/* 2. Large Central Microphone Button */}
         <div className="mt-8 flex flex-col items-center justify-center">
           <button
             onClick={toggleListening}
-            className={`w-28 h-28 sm:w-32 sm:h-32 rounded-full flex items-center justify-center transition-all shadow-xl active:scale-95 ${
+            className={`w-28 h-28 sm:w-32 sm:h-32 rounded-full flex items-center justify-center transition-all shadow-xl active:scale-95 cursor-pointer ${
               isListening
                 ? 'bg-rose-600 text-white shadow-rose-200 ring-8 ring-rose-100 animate-pulse'
                 : 'bg-[#002970] text-white hover:bg-[#001f55] hover:shadow-2xl ring-8 ring-blue-50'
@@ -274,12 +448,12 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
             {isListening ? (
               <div className="text-base font-bold text-rose-600 animate-pulse flex items-center justify-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-                <span>{t.listening}</span>
+                <span>{t.listening} ({recordingSeconds}s)</span>
               </div>
             ) : isProcessing ? (
               <div className="text-sm font-semibold text-[#002970] flex items-center justify-center gap-2">
                 <div className="w-4 h-4 border-2 border-[#00BAF2] border-t-transparent rounded-full animate-spin" />
-                <span>Checking your shop records...</span>
+                <span>Sarvam AI is analyzing shop records...</span>
               </div>
             ) : (
               <div className="text-sm font-medium text-slate-500">
@@ -292,9 +466,14 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
         {/* 3. Recognised Sentence Card */}
         {lastRecognizedQuery && (
           <div className="mt-6 p-4 rounded-xl bg-slate-50 border border-slate-200 text-left">
-            <div className="text-xs font-semibold text-slate-500">You asked:</div>
-            <div className="text-base font-bold text-[#172B4D] mt-0.5">
-              "{lastRecognizedQuery}"
+            <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+              <span>You asked:</span>
+              <span className="text-[10px] text-sky-700 font-mono uppercase bg-sky-50 px-2 py-0.5 rounded border border-sky-100">
+                Sarvam Saaras v4
+              </span>
+            </div>
+            <div className="text-base font-bold text-[#172B4D] mt-1">
+              &ldquo;{lastRecognizedQuery}&rdquo;
             </div>
           </div>
         )}
@@ -310,18 +489,24 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
                 <span className="text-xs font-bold text-[#002970]">
                   Assistant's Answer
                 </span>
+                <span className="text-[10px] bg-white border border-blue-200 text-slate-600 px-2 py-0.5 rounded-full font-mono">
+                  Verified Math
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    if (isSpeaking) stopSpeaking();
-                    else speakText(lastAnswer.spokenText);
+                    if (isSpeaking) {
+                      stopSpeaking();
+                    } else {
+                      playSynthesizedAudio(lastAnswer.spokenText, lastAnswer.audioBase64);
+                    }
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002970] text-white hover:bg-[#001f55] text-xs font-semibold shadow-xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002970] text-white hover:bg-[#001f55] text-xs font-semibold shadow-xs cursor-pointer"
                 >
                   {isSpeaking ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#00BAF2]" />}
-                  <span>{isSpeaking ? 'Stop' : 'Replay Answer'}</span>
+                  <span>{isSpeaking ? 'Stop Audio' : 'Replay Voice'}</span>
                 </button>
               </div>
             </div>
@@ -330,26 +515,41 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
               {lastAnswer.text}
             </div>
 
-            {/* Action Authorization Card if sensitive action drafted */}
+            {/* Action Confirmation Card: Explicit On-Screen Approval */}
             {lastAnswer.actionCard && (
               <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs">
-                <div className="font-bold text-sm text-amber-900 mb-1">
-                  Confirmation Needed: {lastAnswer.actionCard.title}
+                <div className="font-bold text-sm text-amber-900 mb-1 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-700" />
+                  <span>On-Screen Confirmation Needed: {lastAnswer.actionCard.title}</span>
                 </div>
-                <p className="text-slate-700">{lastAnswer.actionCard.description}</p>
+                <p className="text-slate-700 mt-1">{lastAnswer.actionCard.description}</p>
                 <div className="mt-3 flex items-center justify-end gap-2">
                   <button
-                    onClick={() => onRejectAction(lastAnswer.actionCard.id)}
-                    className="px-3 py-1.5 bg-white text-slate-700 border border-slate-300 rounded-lg font-semibold hover:bg-slate-100"
+                    onClick={() => {
+                      onRejectAction(lastAnswer.actionCard.id);
+                      setLastAnswer((prev) => prev ? { ...prev, actionCard: undefined } : null);
+                    }}
+                    className="px-3.5 py-1.5 bg-white text-slate-700 border border-slate-300 rounded-lg font-semibold hover:bg-slate-100 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={() => onApproveAction(lastAnswer.actionCard.id)}
-                    className="px-4 py-1.5 bg-[#002970] text-white rounded-lg font-bold hover:bg-[#001f55] flex items-center gap-1.5 shadow-sm"
+                    onClick={async () => {
+                      await onApproveAction(lastAnswer.actionCard.id);
+                      setLastAnswer((prev) => prev ? {
+                        ...prev,
+                        actionCard: { ...prev.actionCard, status: 'EXECUTED' }
+                      } : null);
+                    }}
+                    disabled={lastAnswer.actionCard.status === 'EXECUTED'}
+                    className={`px-4 py-1.5 rounded-lg font-bold flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                      lastAnswer.actionCard.status === 'EXECUTED'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-[#002970] text-white hover:bg-[#001f55]'
+                    }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 text-[#00BAF2]" />
-                    <span>Approve & Send</span>
+                    <span>{lastAnswer.actionCard.status === 'EXECUTED' ? 'Executed & Logged' : 'Confirm & Execute'}</span>
                   </button>
                 </div>
               </div>
@@ -358,42 +558,52 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
         )}
 
         {/* Fallback Typed Input */}
-        <div className="mt-6 pt-5 border-t border-slate-100 flex items-center gap-2">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleProcessQuery(inputText);
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleProcessQuery(inputText);
             }}
-            placeholder="Type your question if you cannot speak right now..."
-            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002970]"
-          />
-          <button
-            onClick={() => handleProcessQuery(inputText)}
-            disabled={!inputText.trim() || isProcessing}
-            className="px-4 py-2.5 bg-[#002970] text-white rounded-xl text-xs font-semibold hover:bg-[#001f55] disabled:opacity-40"
+            className="flex items-center gap-2 max-w-xl mx-auto"
           >
-            Ask
-          </button>
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={t.orTypeHere}
+              className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-hidden focus:border-[#00BAF2] focus:bg-white transition"
+            />
+            <button
+              type="submit"
+              disabled={isProcessing || !inputText.trim()}
+              className="px-5 py-2.5 bg-[#00BAF2] hover:bg-[#0099cc] text-white font-semibold rounded-xl text-sm transition shadow-xs disabled:opacity-50 cursor-pointer"
+            >
+              {t.askButton}
+            </button>
+          </form>
         </div>
       </div>
 
-      {/* 5. Simple Suggested Questions (Section 4) */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-        <h3 className="text-sm font-bold text-[#172B4D] mb-3">
-          {t.askQuestionsPrompt}
-        </h3>
+      {/* 5. Suggested Questions Grid */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        <h2 className="text-sm font-bold text-[#172B4D] mb-3 flex items-center gap-2">
+          <span>{t.suggestedQuestionsHeading}</span>
+          <span className="text-xs font-normal text-slate-500">
+            (Tap any question to ask)
+          </span>
+        </h2>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {currentQuestions.map((q, idx) => (
             <button
               key={idx}
               onClick={() => handleProcessQuery(q)}
-              className="text-left px-3.5 py-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-xs sm:text-sm font-medium text-[#002970] border border-slate-200 hover:border-blue-200 transition-all flex items-center gap-2"
+              className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-blue-50/70 hover:border-blue-200 text-left transition flex items-center justify-between group cursor-pointer"
             >
-              <span>{q}</span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#00BAF2] shrink-0" />
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-[#002970]">
+                {q}
+              </span>
+              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-[#002970] group-hover:translate-x-0.5 transition" />
             </button>
           ))}
         </div>

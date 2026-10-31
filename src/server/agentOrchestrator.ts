@@ -62,9 +62,9 @@ export class AgentOrchestrator {
     const khata = DeterministicAnalyticsEngine.getKhataAnalysis(merchantId);
     const growth = merchantDB.getGrowthInsights(merchantId);
 
-    // Security check: If merchant is submitting a voice PIN
-    const isPinMatch = voicePin === '1947' || lowerQuery.includes('1947') || lowerQuery.includes('unnis sau saintalis');
-    const userIsAuthenticated = isAuthenticated || isPinMatch;
+    // Security safeguard: Never authenticate sensitive financial actions by voice alone.
+    // Sensitive actions create a DRAFT action card requiring explicit on-screen merchant confirmation.
+    const userIsAuthenticated = Boolean(isAuthenticated);
 
     // 2. Identify Intent & Select Specialised Agent
     let agentName = 'Merchant Orchestrator';

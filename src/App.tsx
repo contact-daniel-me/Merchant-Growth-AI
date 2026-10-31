@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SimpleNavbar } from './components/SimpleNavbar.tsx';
 import { SimpleHomeScreen } from './components/SimpleHomeScreen.tsx';
 import { SimpleVoiceAssistantScreen } from './components/SimpleVoiceAssistantScreen.tsx';
@@ -239,28 +239,75 @@ export default function App() {
     }
   };
 
-  // Play Daily Briefing Audio
-  const playBriefingAudio = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
+  const briefingAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
+  // Play Daily Briefing Audio with Sarvam Bulbul v4 Flash & Clean Fallback
+  const playBriefingAudio = async (text: string) => {
     if (isBriefingAudioPlaying) {
-      window.speechSynthesis.cancel();
+      if (briefingAudioPlayerRef.current) {
+        briefingAudioPlayerRef.current.pause();
+        briefingAudioPlayerRef.current = null;
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       setIsBriefingAudioPlaying(false);
       return;
     }
 
+    // 1. Try pre-cached Sarvam audio or call TTS endpoint
+    let base64 = latestBriefing?.audioBase64;
+    if (!base64 && text) {
+      try {
+        const res = await api.voiceTTS(text, currentLanguage);
+        if (res.success && res.audioBase64) {
+          base64 = res.audioBase64;
+        }
+      } catch (e) {
+        console.warn('Sarvam TTS fetch warning:', e);
+      }
+    }
+
+    if (base64) {
+      try {
+        const audioUrl = base64.startsWith('data:audio') ? base64 : `data:audio/wav;base64,${base64}`;
+        const audio = new Audio(audioUrl);
+        briefingAudioPlayerRef.current = audio;
+        setIsBriefingAudioPlaying(true);
+
+        audio.onended = () => {
+          setIsBriefingAudioPlaying(false);
+          briefingAudioPlayerRef.current = null;
+        };
+
+        audio.onerror = () => {
+          fallbackSpeechSynthesis(text);
+        };
+
+        await audio.play();
+        return;
+      } catch (err) {
+        console.warn('Audio playback error, using fallback:', err);
+      }
+    }
+
+    fallbackSpeechSynthesis(text);
+  };
+
+  const fallbackSpeechSynthesis = (text: string) => {
+    if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     const langMap: Record<IndianLanguage, string> = {
+      en: 'en-IN',
       hi: 'hi-IN',
       ta: 'ta-IN',
       kn: 'kn-IN',
       te: 'te-IN',
-      en: 'en-IN',
     };
-    utterance.lang = langMap[currentLanguage] || 'hi-IN';
+    utterance.lang = langMap[currentLanguage] || 'en-IN';
     utterance.rate = 0.95;
-    utterance.pitch = 1.05;
+    utterance.pitch = 1.0;
 
     utterance.onstart = () => setIsBriefingAudioPlaying(true);
     utterance.onend = () => setIsBriefingAudioPlaying(false);

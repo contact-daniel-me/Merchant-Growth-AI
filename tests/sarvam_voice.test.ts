@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { SarvamAgentService } from '../src/server/services/sarvam/agentService.ts';
 import { LanguageService } from '../src/server/services/sarvam/languageService.ts';
+import { BriefService } from '../src/server/services/briefService.ts';
 import { AppDatabase } from '../src/server/db/database.ts';
 
 test('LanguageService: Supports 5 Indian languages with correct Sarvam codes', () => {
@@ -55,4 +56,35 @@ test('SarvamAgentService: Processes customer dues query and prepares reminder ca
   assert.strictEqual(response.intentIdentified, 'KHATA_AND_CUSTOMER_DUES');
   assert.ok(response.verifiedData.totalOutstandingDues > 0);
   assert.ok(response.actionCard, 'Should generate an action card for reminder approval');
+});
+
+test('BriefService: Formats spoken amounts for Indic number words', () => {
+  const enWords = BriefService.formatSpokenAmount(12500, 'en');
+  assert.ok(enWords.includes('thousand'), 'English should express in thousands');
+
+  const taWords = BriefService.formatSpokenAmount(12500, 'ta');
+  assert.ok(taWords.includes('ரூபாய்'), 'Tamil should include rupee suffix');
+
+  const hiWords = BriefService.formatSpokenAmount(12500, 'hi');
+  assert.ok(hiWords.includes('रुपये'), 'Hindi should include rupee suffix');
+});
+
+test('BriefService: Generates grounded daily brief in English and Tamil with zero hallucinated figures', async () => {
+  AppDatabase.getDB();
+  const enBrief = await BriefService.generateDailyBrief('mer_sharma_kirana', 'en');
+
+  assert.ok(enBrief.id.startsWith('BRIEF-mer_sharma_kirana'));
+  assert.strictEqual(enBrief.language, 'en');
+  assert.ok(enBrief.todayCollections > 0);
+  assert.ok(enBrief.spokenAudioText.includes(String(enBrief.todayTransactions)));
+
+  // Generate Tamil brief
+  const taBrief = await BriefService.generateDailyBrief('mer_sharma_kirana', 'ta');
+  assert.strictEqual(taBrief.language, 'ta');
+  assert.ok(taBrief.spokenAudioText.includes('வணக்கம்'));
+  assert.strictEqual(taBrief.todayCollections, enBrief.todayCollections, 'Financial numbers must match across languages');
+
+  // Verify caching: subsequent request retrieves cached record
+  const cachedBrief = await BriefService.getLatestBriefing('mer_sharma_kirana', 'ta');
+  assert.strictEqual(cachedBrief.id, taBrief.id);
 });

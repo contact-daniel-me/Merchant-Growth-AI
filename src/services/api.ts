@@ -291,7 +291,34 @@ export const api = {
     return briefing;
   },
 
-  // 12. Voice Query (Sarvam AI Voice Assistant)
+  // 12. Voice Services (STT and TTS via Sarvam AI)
+  async voiceSTT(audioBase64: string, language: IndianLanguage = 'en', mimeType = 'audio/wav'): Promise<{ success: boolean; transcript: string; detectedLanguage: string }> {
+    const res = await safeFetchJson<{ transcript: string; detectedLanguage: string }>('/api/voice/stt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioBase64, language, mimeType }),
+    }, 10000);
+
+    if (res.success && res.data) {
+      return { success: true, transcript: res.data.transcript, detectedLanguage: res.data.detectedLanguage };
+    }
+    return { success: false, transcript: '', detectedLanguage: language };
+  },
+
+  async voiceTTS(text: string, language: IndianLanguage = 'en', speaker?: string): Promise<{ success: boolean; audioBase64: string | null; text: string }> {
+    const res = await safeFetchJson<{ audioBase64: string | null; text: string }>('/api/voice/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, language, speaker }),
+    }, 10000);
+
+    if (res.success && res.data) {
+      return { success: true, audioBase64: res.data.audioBase64, text };
+    }
+    return { success: false, audioBase64: null, text };
+  },
+
+  // 13. Voice Query (Sarvam AI Voice Assistant)
   async queryVoice(payload: {
     merchantId: string;
     query?: string;

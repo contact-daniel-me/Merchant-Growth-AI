@@ -319,3 +319,29 @@ CREATE TABLE IF NOT EXISTS paytm_webhook_events (
     processed_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'PROCESSED'
 );
+
+-- 20. Daily Executive Business Intelligence Briefings
+CREATE TABLE IF NOT EXISTS daily_briefings (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    briefing_date TEXT NOT NULL,
+    language TEXT NOT NULL,
+    today_collections REAL NOT NULL,
+    today_transactions INTEGER NOT NULL,
+    settlement_status TEXT NOT NULL,
+    settled_amount REAL NOT NULL,
+    pending_amount REAL NOT NULL,
+    refunds_count INTEGER NOT NULL DEFAULT 0,
+    refunds_amount REAL NOT NULL DEFAULT 0,
+    exceptions_notice TEXT,
+    cash_flow_highlight TEXT,
+    credit_overdue_summary TEXT,
+    key_growth_opportunity TEXT,
+    spoken_text TEXT NOT NULL,
+    display_text TEXT,
+    audio_base64 TEXT,
+    duration_seconds INTEGER DEFAULT 30,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(merchant_id, briefing_date, language)
+);
+CREATE INDEX IF NOT EXISTS idx_briefings_lookup ON daily_briefings(merchant_id, briefing_date, language);

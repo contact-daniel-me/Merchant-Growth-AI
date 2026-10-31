@@ -9,7 +9,8 @@ export class TextToSpeechService {
    */
   public static async synthesizeSpeech(
     text: string,
-    language: IndianLanguage = 'en'
+    language: IndianLanguage = 'en',
+    customSpeaker?: string
   ): Promise<{ audioBase64: string | null; audioUrl?: string }> {
     if (!isSarvamConfigured() || !text.trim()) {
       return { audioBase64: null };
@@ -17,7 +18,7 @@ export class TextToSpeechService {
 
     const config = getSarvamConfig();
     const sarvamLang = LanguageService.getSarvamCode(language);
-    const speaker = LanguageService.getSpeaker(language);
+    const speaker = customSpeaker || LanguageService.getSpeaker(language);
 
     // Limit text to 1000 characters for snappy voice response
     const sanitizedText = text.slice(0, 1000);

@@ -11,6 +11,9 @@ import { KhataService } from './src/server/services/khataService.ts';
 import { ActionService } from './src/server/services/actionService.ts';
 import { MonetizationService } from './src/server/services/monetizationService.ts';
 import { SarvamAgentService } from './src/server/services/sarvam/agentService.ts';
+import { SpeechToTextService } from './src/server/services/sarvam/speechToText.ts';
+import { TextToSpeechService } from './src/server/services/sarvam/textToSpeech.ts';
+import { BriefService } from './src/server/services/briefService.ts';
 import { PaytmClient } from './src/server/integrations/paytm/client.ts';
 import { PaytmWebhookHandler } from './src/server/integrations/paytm/webhooks.ts';
 import { IndianLanguage } from './src/types/index.ts';
@@ -460,6 +463,48 @@ export async function createExpressApp() {
   // ----------------------------------------------------
   // 12. Sarvam AI Voice Agent Integration
   // ----------------------------------------------------
+  // Speech-to-Text: Dedicated Saaras v4 STT Endpoint
+  app.post('/api/voice/stt', async (req, res) => {
+    try {
+      const { audioBase64, language = 'en', mimeType = 'audio/wav' } = req.body;
+      if (!audioBase64) {
+        return res.status(400).json({ success: false, error: 'audioBase64 is required.' });
+      }
+
+      const result = await SpeechToTextService.transcribeAudio(audioBase64, language, mimeType);
+      res.json({
+        success: true,
+        transcript: result.transcript,
+        detectedLanguage: result.detectedLanguage,
+      });
+    } catch (err: any) {
+      console.error('[Voice STT Error]', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Text-to-Speech: Dedicated Bulbul v4 Flash TTS Endpoint
+  app.post('/api/voice/tts', async (req, res) => {
+    try {
+      const { text, language = 'en', speaker } = req.body;
+      if (!text || !text.trim()) {
+        return res.status(400).json({ success: false, error: 'text is required.' });
+      }
+
+      const result = await TextToSpeechService.synthesizeSpeech(text, language, speaker);
+      res.json({
+        success: true,
+        text,
+        language,
+        audioBase64: result.audioBase64,
+      });
+    } catch (err: any) {
+      console.error('[Voice TTS Error]', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Voice Query (Full Flow: STT -> Intent & Facts -> Sarvam LLM/Deterministic -> TTS)
   app.post('/api/voice/query', async (req, res) => {
     try {
       const { merchantId, query, language, audioBase64 } = req.body;
@@ -503,35 +548,23 @@ export async function createExpressApp() {
   });
 
   // ----------------------------------------------------
-  // 14. Spoken Daily Briefings
+  // 14. Spoken Daily Briefings (Grounded Facts + Bulbul v4 Voice)
   // ----------------------------------------------------
-  app.get('/api/briefings/:merchantId', (req, res) => {
+  app.get('/api/briefings/:merchantId', async (req, res) => {
     try {
-      const overview = FinancialEngine.getFinancialOverview(req.params.merchantId);
-      const reconciliation = FinancialEngine.reconcileSettlements(req.params.merchantId);
-      const khata = KhataService.getKhataOverview(req.params.merchantId);
-
-      const briefing = {
-        id: `BRIEF-${Date.now()}`,
-        merchantId: req.params.merchantId,
-        date: new Date().toISOString().slice(0, 10),
-        language: 'en' as IndianLanguage,
-        todayCollections: overview.todayGrossCollections,
-        todayTransactions: overview.todayTransactionsCount,
-        settlementStatus: `₹${overview.inTransitAmount.toLocaleString('en-IN')} in transit to your registered bank account.`,
-        settledAmount: overview.settledAmount,
-        pendingAmount: overview.pendingAmount,
-        refundsCount: 0,
-        refundsAmount: 0,
-        exceptionsNotice: overview.discrepanciesCount > 0 ? `${overview.discrepanciesCount} discrepancy under verification.` : 'Zero discrepancy, all transactions verified.',
-        cashFlowHighlight: 'Projected net positive operating flow of ₹28,000+ after daily loan EMI deduction.',
-        creditOverdueSummary: `Store credit overdue of ₹${khata.totalOverdueAmount.toLocaleString('en-IN')} pending collection.`,
-        keyGrowthOpportunity: 'Evening peak hours (6:30 - 9:00 PM) drive 68% of retail footfall.',
-        spokenAudioText: `Good evening! Today's total collections stand at ₹${overview.todayGrossCollections}. ₹${overview.inTransitAmount} is scheduled to be credited to your bank account tonight.`,
-        audioDurationSeconds: 24,
-      };
-
+      const lang = (req.query.lang as IndianLanguage) || 'en';
+      const briefing = await BriefService.getLatestBriefing(req.params.merchantId, lang);
       res.json({ success: true, data: [briefing] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/briefings/:merchantId/generate', async (req, res) => {
+    try {
+      const { language = 'en' } = req.body;
+      const briefing = await BriefService.generateDailyBrief(req.params.merchantId, language);
+      res.json({ success: true, data: briefing });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

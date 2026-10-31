@@ -188,6 +188,7 @@ export interface DailyBriefing {
   keyGrowthOpportunity: string;
   spokenAudioText: string;
   audioDurationSeconds: number;
+  audioBase64?: string | null;
 }
 
 export interface AgentChatMessage {
