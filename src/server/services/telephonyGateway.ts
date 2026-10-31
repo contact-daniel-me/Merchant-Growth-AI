@@ -203,27 +203,24 @@ export class TelephonyGateway {
     // 3. DIAL VIA SARVAM SAMVAAD OUTBOUND API
     if (config.provider === 'SARVAM_SAMVAAD') {
       try {
-        const apiKey = process.env.SARVAM_API_KEY || '';
+        const apiKey = process.env.SARVAM_WORKSPACE_API_KEY || process.env.SARVAM_API_KEY || '';
         const orgId = process.env.SARVAM_ORG_ID || 'default';
         const workspaceId = process.env.SARVAM_WORKSPACE_ID!;
-        const appId = process.env.SARVAM_APP_ID || 'default';
-        const callerPhone = process.env.SARVAM_CALLER_NUMBER;
+        const appId = process.env.SARVAM_APP_ID || 'Conversatio-f9c1c7d2-6b12';
+        const connectionId = process.env.SARVAM_CONNECTION_ID || '048e4c04-05-dbec92ac-b3fa';
 
         const body: Record<string, any> = {
           app_config: {
             app_id: appId,
             app_version: 1,
+            connection_config: {
+              connection_id: connectionId,
+            },
           },
           user_config: {
             user_phone_number: cleanPhone,
           },
         };
-
-        if (callerPhone) {
-          body.app_config.connection_config = {
-            agent_phone_number: callerPhone,
-          };
-        }
 
         const res = await fetch(`https://apps.sarvam.ai/api/outbounds/v1/orgs/${orgId}/workspaces/${workspaceId}/outbounds`, {
           method: 'POST',
