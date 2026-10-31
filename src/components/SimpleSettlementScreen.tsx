@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SettlementBatch, MerchantProfile, IndianLanguage } from '../types/index.ts';
 import { translations } from '../utils/translations.ts';
+import { RepaymentScenarioCard } from './RepaymentScenarioCard.tsx';
 import {
   Building,
   CheckCircle2,
@@ -204,6 +205,9 @@ export const SimpleSettlementScreen: React.FC<SimpleSettlementScreenProps> = ({
           })}
         </div>
       </div>
+
+      {/* Cash-Flow Repayment Scenario Engine (Part 7: Multi-Tenure Scenario Modeling) */}
+      <RepaymentScenarioCard merchantId={merchant.id} currentLanguage={currentLanguage} />
     </div>
   );
 };

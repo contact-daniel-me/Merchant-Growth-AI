@@ -18,13 +18,14 @@ import {
   IndianLanguage,
   PaymentMethod,
 } from './types/index.ts';
-import { FinancialOverviewReport } from './server/analyticsEngine.ts';
+import { FinancialOverviewReport, DeterministicAnalyticsEngine } from './server/analyticsEngine.ts';
+import { merchantDB } from './server/mockDb.ts';
 import { api } from './services/api.ts';
 
 export default function App() {
-  const [merchants, setMerchants] = useState<MerchantProfile[]>([]);
+  const [merchants, setMerchants] = useState<MerchantProfile[]>(() => merchantDB.getMerchants());
   const [currentMerchantId, setCurrentMerchantId] = useState<string>('mer_sharma_kirana');
-  const [currentMerchant, setCurrentMerchant] = useState<MerchantProfile | null>(null);
+  const [currentMerchant, setCurrentMerchant] = useState<MerchantProfile | null>(() => merchantDB.getMerchant('mer_sharma_kirana'));
 
   // Exactly 6 Navigation Items: home, payments, money, dues, growth, assistant
   const [activeTab, setActiveTab] = useState<string>('home');
@@ -40,13 +41,25 @@ export default function App() {
     }
   };
 
-  // Application Data States
-  const [overview, setOverview] = useState<FinancialOverviewReport | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [settlements, setSettlements] = useState<SettlementBatch[]>([]);
-  const [creditRecords, setCreditRecords] = useState<CustomerCreditRecord[]>([]);
-  const [growthInsights, setGrowthInsights] = useState<GrowthInsight[]>([]);
-  const [briefings, setBriefings] = useState<DailyBriefing[]>([]);
+  // Application Data States initialized with robust local data to prevent any blank/error screen
+  const [overview, setOverview] = useState<FinancialOverviewReport | null>(() =>
+    DeterministicAnalyticsEngine.getFinancialOverview('mer_sharma_kirana')
+  );
+  const [transactions, setTransactions] = useState<Transaction[]>(() =>
+    merchantDB.getTransactions('mer_sharma_kirana')
+  );
+  const [settlements, setSettlements] = useState<SettlementBatch[]>(() =>
+    merchantDB.getSettlements('mer_sharma_kirana')
+  );
+  const [creditRecords, setCreditRecords] = useState<CustomerCreditRecord[]>(() =>
+    merchantDB.getKhata('mer_sharma_kirana')
+  );
+  const [growthInsights, setGrowthInsights] = useState<GrowthInsight[]>(() =>
+    merchantDB.getGrowthInsights('mer_sharma_kirana')
+  );
+  const [briefings, setBriefings] = useState<DailyBriefing[]>(() =>
+    merchantDB.getBriefings('mer_sharma_kirana')
+  );
 
   // Modals
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -57,8 +70,8 @@ export default function App() {
   const [isBriefingAudioPlaying, setIsBriefingAudioPlaying] = useState(false);
   const [isChimePlaying, setIsChimePlaying] = useState(false);
 
-  // Loading state
-  const [isLoading, setIsLoading] = useState(true);
+  // Loading state (starts false because initial cached state is immediately available)
+  const [isLoading, setIsLoading] = useState(false);
 
   // 1. Initial Load: Fetch Merchants
   useEffect(() => {
@@ -403,6 +416,7 @@ export default function App() {
         {activeTab === 'payments' && (
           <SimplePaymentsScreen
             transactions={transactions}
+            merchantId={currentMerchant.id}
             currentLanguage={currentLanguage}
             onSimulatePayment={handleSimulatePayment}
           />

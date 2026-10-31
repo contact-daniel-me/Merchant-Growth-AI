@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IndianLanguage } from '../types/index.ts';
 import { translations } from '../utils/translations.ts';
 import { api } from '../services/api.ts';
+import { CustomerMarketingSegmentsCard } from './CustomerMarketingSegmentsCard.tsx';
 import {
   TrendingUp,
   Sparkles,
@@ -473,6 +474,9 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
               </div>
             )}
           </div>
+
+          {/* Algorithmic RFM Customer Segmentation & Campaign Dispatch (Part 8) */}
+          <CustomerMarketingSegmentsCard merchantId={merchantId} currentLanguage={currentLanguage} />
         </div>
       )}
 

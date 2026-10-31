@@ -20,6 +20,15 @@ import { DataSanitizer } from './src/server/services/dataSanitizer.ts';
 import { PaytmClient } from './src/server/integrations/paytm/client.ts';
 import { PaytmWebhookHandler } from './src/server/integrations/paytm/webhooks.ts';
 import { IndianLanguage } from './src/types/index.ts';
+import { SecurityMiddleware } from './src/server/middleware/securityMiddleware.ts';
+import { PaymentVerificationService } from './src/server/services/paymentVerificationService.ts';
+import { MerchantFeeAdvisor } from './src/server/services/fees/merchantFeeAdvisor.ts';
+import { DeviceHealthService } from './src/server/services/devices/deviceHealthService.ts';
+import { RepaymentScenarioEngine } from './src/server/services/loans/repaymentScenarioEngine.ts';
+import { CustomerSegmentationService } from './src/server/services/marketing/customerSegmentationService.ts';
+import { PaymentLinkService } from './src/server/services/payments/paymentLinkService.ts';
+import { DailyBriefScheduler } from './src/server/services/scheduler/dailyBriefScheduler.ts';
+import { AiCostService } from './src/server/services/ai/aiCostService.ts';
 
 dotenv.config();
 
@@ -29,6 +38,17 @@ const __dirname = path.dirname(__filename);
 export async function createExpressApp() {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
+
+  // Security Headers (CSP, HSTS, X-Content-Type-Options, X-Frame-Options)
+  app.use(SecurityMiddleware.applySecurityHeaders);
+
+  // Contextual Rate Limiting
+  const authLimiter = SecurityMiddleware.createRateLimiter(20, 60);
+  const voiceLimiter = SecurityMiddleware.createRateLimiter(60, 60);
+  const generalLimiter = SecurityMiddleware.createRateLimiter(240, 60);
+  app.use('/api/auth', authLimiter);
+  app.use('/api/voice', voiceLimiter);
+  app.use('/api', generalLimiter);
 
   // Initialize SQLite database schema and seed data
   AppDatabase.getDB();
@@ -751,12 +771,245 @@ export async function createExpressApp() {
     }
   });
 
+  // ----------------------------------------------------
+  // Payment Verification (Part 5)
+  // ----------------------------------------------------
+  app.post('/api/payments/verify/:merchantId', (req, res) => {
+    try {
+      const { amount, payerQuery, timeWindowHours } = req.body;
+      const result = PaymentVerificationService.verifyPayment({
+        merchantId: req.params.merchantId,
+        amount: Number(amount) || 0,
+        payerQuery,
+        timeWindowHours: Number(timeWindowHours) || 24,
+      });
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Configurable UPI Fee Advisor (Part 4 / 2026 Framework)
+  // ----------------------------------------------------
+  app.get('/api/fees/assessment/:merchantId', (req, res) => {
+    try {
+      const assessment = MerchantFeeAdvisor.evaluateMerchantFees(req.params.merchantId);
+      res.json({ success: true, data: assessment });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/fees/policies', (req, res) => {
+    try {
+      MerchantFeeAdvisor.initDefaultPolicies();
+      const db = AppDatabase.getDB();
+      const policies = db.prepare('SELECT * FROM merchant_fee_policies ORDER BY effective_from DESC').all();
+      res.json({ success: true, data: policies });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Device Health & Operations Monitoring (Part 6)
+  // ----------------------------------------------------
+  app.get('/api/devices/health/:merchantId', (req, res) => {
+    try {
+      const health = DeviceHealthService.getDeviceHealth(req.params.merchantId);
+      res.json({ success: true, data: health });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/devices/support-ticket/:merchantId', (req, res) => {
+    try {
+      const { serialNumber, issueDescription } = req.body;
+      const ticket = DeviceHealthService.createSupportTicket(
+        req.params.merchantId,
+        serialNumber || 'UNKNOWN_DEVICE',
+        issueDescription || 'Soundbox connectivity issue reported.'
+      );
+      res.json({ success: true, data: ticket });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Repayment & Cash-Flow Scenarios (Part 7)
+  // ----------------------------------------------------
+  app.get('/api/loans/scenarios/:merchantId', (req, res) => {
+    try {
+      const scenarios = RepaymentScenarioEngine.generateScenarios(req.params.merchantId);
+      res.json({ success: true, data: scenarios });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Targeted Customer Marketing (Part 8)
+  // ----------------------------------------------------
+  app.get('/api/marketing/segments/:merchantId', (req, res) => {
+    try {
+      const segments = CustomerSegmentationService.computeSegments(req.params.merchantId);
+      res.json({ success: true, data: segments });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/marketing/campaigns/:merchantId/dispatch', (req, res) => {
+    try {
+      const { segmentCode, customMessage, approverName } = req.body;
+      const result = CustomerSegmentationService.dispatchCampaign({
+        merchantId: req.params.merchantId,
+        segmentCode: segmentCode || 'REGULAR',
+        customMessage,
+        approverName: approverName || 'Merchant Owner',
+      });
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Authorized Payment Links & Autopay Mandates (Part 9)
+  // ----------------------------------------------------
+  app.post('/api/payments/links/:merchantId', (req, res) => {
+    try {
+      const { customerId, customerName, customerPhone, amount, purpose } = req.body;
+      const link = PaymentLinkService.createPaymentLink({
+        merchantId: req.params.merchantId,
+        customerId,
+        customerName: customerName || 'Retail Customer',
+        customerPhone: customerPhone || '+91 98450 12890',
+        amount: Number(amount) || 100,
+        purpose,
+      });
+      res.json({ success: true, data: link });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/payments/autopay/mandate/:merchantId', (req, res) => {
+    try {
+      const { customerId, maxAmount, frequency } = req.body;
+      const mandate = PaymentLinkService.createAutopayMandate({
+        merchantId: req.params.merchantId,
+        customerId,
+        maxAmount: Number(maxAmount) || 2000,
+        frequency: frequency || 'AS_PRESENTED',
+      });
+      res.json({ success: true, data: mandate });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/payments/agent/permissions/:merchantId', (req, res) => {
+    try {
+      const evaluation = PaymentLinkService.evaluateAutonomousAgentPayment(
+        req.params.merchantId,
+        Number(req.query.amount) || 500
+      );
+      res.json({ success: true, data: evaluation });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Proactive Daily Brief Schedule & Archive (Part 3)
+  // ----------------------------------------------------
+  app.get('/api/briefings/schedule/:merchantId', (req, res) => {
+    try {
+      const config = DailyBriefScheduler.getScheduleConfig(req.params.merchantId);
+      res.json({ success: true, data: config });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/briefings/schedule/:merchantId', (req, res) => {
+    try {
+      const { openingTime, briefingTime, preferredLanguage, isEnabled } = req.body;
+      const db = AppDatabase.getDB();
+      db.prepare(`
+        UPDATE daily_brief_schedules 
+        SET opening_time = COALESCE(?, opening_time),
+            briefing_time = COALESCE(?, briefing_time),
+            preferred_language = COALESCE(?, preferred_language),
+            is_enabled = COALESCE(?, is_enabled),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE merchant_id = ?
+      `).run(
+        openingTime || null,
+        briefingTime || null,
+        preferredLanguage || null,
+        isEnabled !== undefined ? (isEnabled ? 1 : 0) : null,
+        req.params.merchantId
+      );
+      const updated = DailyBriefScheduler.getScheduleConfig(req.params.merchantId);
+      res.json({ success: true, data: updated });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/briefings/archive/:merchantId', (req, res) => {
+    try {
+      const archive = DailyBriefScheduler.getBriefArchive(req.params.merchantId);
+      res.json({ success: true, data: archive });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/briefings/scheduler/trigger', async (req, res) => {
+    try {
+      const runResult = await DailyBriefScheduler.executeScheduledRun();
+      res.json({ success: true, data: runResult });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // AI Metering & Operating Cost Intelligence (Part 11)
+  // ----------------------------------------------------
+  app.get('/api/admin/ai/cost-summary', (req, res) => {
+    try {
+      const summary = AiCostService.getCostSummary();
+      res.json({ success: true, data: summary });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/admin/ai/usage/:merchantId', (req, res) => {
+    try {
+      const summary = AiCostService.getCostSummary(req.params.merchantId);
+      res.json({ success: true, data: summary });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   return app;
 }
 
 async function startServer() {
   const app = await createExpressApp();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Start background periodic brief scheduler
+  DailyBriefScheduler.startBackgroundWorker();
 
   // ----------------------------------------------------
   // Vite Integration (Dev Middleware or Production Static)

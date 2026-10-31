@@ -507,4 +507,107 @@ export const api = {
     });
     return res.data;
   },
+
+  // 21. Real-Time Payment Verification
+  async verifyPayment(merchantId: string, payload: { amount: number; payerQuery?: string; timeWindowHours?: number }) {
+    const res = await safeFetchJson<any>(`/api/payments/verify/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  // 22. Configurable UPI Fee Advisor (2026 Framework)
+  async getFeeAssessment(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/fees/assessment/${merchantId}`);
+    return res.data;
+  },
+
+  async getFeePolicies() {
+    const res = await safeFetchJson<any[]>(`/api/fees/policies`);
+    return res.data || [];
+  },
+
+  // 23. Device Health & Operations Monitoring
+  async getDeviceHealth(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/devices/health/${merchantId}`);
+    return res.data;
+  },
+
+  async createDeviceSupportTicket(merchantId: string, serialNumber: string, issueDescription: string) {
+    const res = await safeFetchJson<any>(`/api/devices/support-ticket/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serialNumber, issueDescription }),
+    });
+    return res.data;
+  },
+
+  // 24. Repayment & Cash-Flow Scenarios
+  async getLoanScenarios(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/loans/scenarios/${merchantId}`);
+    return res.data;
+  },
+
+  // 25. Customer Marketing Segments
+  async getCustomerSegments(merchantId: string) {
+    const res = await safeFetchJson<any[]>(`/api/marketing/segments/${merchantId}`);
+    return res.data || [];
+  },
+
+  async dispatchCampaign(merchantId: string, payload: { segmentCode: string; customMessage?: string; approverName?: string }) {
+    const res = await safeFetchJson<any>(`/api/marketing/campaigns/${merchantId}/dispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  // 26. Payment Links & UPI Autopay
+  async createPaymentLink(merchantId: string, payload: any) {
+    const res = await safeFetchJson<any>(`/api/payments/links/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  async createAutopayMandate(merchantId: string, payload: any) {
+    const res = await safeFetchJson<any>(`/api/payments/autopay/mandate/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  // 27. Proactive Brief Scheduler & Archive
+  async getBriefSchedule(merchantId: string) {
+    const res = await safeFetchJson<any>(`/api/briefings/schedule/${merchantId}`);
+    return res.data;
+  },
+
+  async updateBriefSchedule(merchantId: string, payload: any) {
+    const res = await safeFetchJson<any>(`/api/briefings/schedule/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  async getBriefArchive(merchantId: string) {
+    const res = await safeFetchJson<any[]>(`/api/briefings/archive/${merchantId}`);
+    return res.data || [];
+  },
+
+  // 28. AI Cost Intelligence (Admin)
+  async getAiCostSummary(merchantId?: string) {
+    const url = merchantId ? `/api/admin/ai/usage/${merchantId}` : `/api/admin/ai/cost-summary`;
+    const res = await safeFetchJson<any>(url);
+    return res.data;
+  },
 };

@@ -1,4 +1,6 @@
 import { AppDatabase } from '../db/database.ts';
+import { RepaymentScenarioEngine } from './loans/repaymentScenarioEngine.ts';
+import { CustomerSegmentationService } from './marketing/customerSegmentationService.ts';
 
 export const SUBSCRIPTION_PLANS = [
   {
@@ -130,12 +132,16 @@ export class MonetizationService {
     `).get(merchantId) as any;
 
     const totalVolume = Number(past30Days.total);
-    const eligibleAmountEstimate = Math.min(500000, Math.round(totalVolume * 1.5));
+    const scenarioReport = RepaymentScenarioEngine.generateScenarios(merchantId);
+    const avgDaily = scenarioReport.historicalMetrics.averageDailyCollections;
+    const eligibleAmountEstimate = Math.min(500000, Math.round(avgDaily * 60));
 
     return {
       disclaimer:
         'IMPORTANT REGULATORY NOTICE: Merchant by GrowIOTA facilitates digital loan discovery in partnership with RBI-regulated banks and NBFCs. Final credit assessment, underwriting, interest rates, and loan disbursal are solely at the discretion of the lending partner.',
       partnerCount: partners.length,
+      historicalCashFlowMetrics: scenarioReport.historicalMetrics,
+      repaymentScenarios: scenarioReport.scenarios,
       partners: partners.map((p) => ({
         id: p.id,
         name: p.partner_name,

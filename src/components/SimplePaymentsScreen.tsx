@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Transaction, PaymentMethod, IndianLanguage } from '../types/index.ts';
 import { translations } from '../utils/translations.ts';
+import { PaymentVerificationCard } from './PaymentVerificationCard.tsx';
+import { MerchantFeeAdvisorCard } from './MerchantFeeAdvisorCard.tsx';
 import {
   Search,
   Filter,
@@ -14,21 +16,26 @@ import {
   CreditCard,
   Wallet,
   X,
+  ShieldCheck,
+  Percent,
 } from 'lucide-react';
 
 interface SimplePaymentsScreenProps {
   transactions: Transaction[];
+  merchantId?: string;
   currentLanguage: IndianLanguage;
   onSimulatePayment: (data: { amount: number; paymentMethod: PaymentMethod; customerName: string }) => Promise<void>;
 }
 
 export const SimplePaymentsScreen: React.FC<SimplePaymentsScreenProps> = ({
   transactions,
+  merchantId = 'mer_sharma_kirana',
   currentLanguage,
   onSimulatePayment,
 }) => {
   const t = translations[currentLanguage] || translations.hi;
 
+  const [activeToolTab, setActiveToolTab] = useState<'NONE' | 'VERIFY' | 'FEES'>('NONE');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'SUCCESS' | 'PENDING_SETTLEMENT' | 'REFUNDED' | 'FAILED'>('ALL');
   const [isTestPaymentModalOpen, setIsTestPaymentModalOpen] = useState(false);
@@ -143,6 +150,41 @@ export const SimplePaymentsScreen: React.FC<SimplePaymentsScreenProps> = ({
           <span>Test Payment Soundbox</span>
         </button>
       </div>
+
+      {/* Smart Operations Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setActiveToolTab(activeToolTab === 'VERIFY' ? 'NONE' : 'VERIFY')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+            activeToolTab === 'VERIFY'
+              ? 'bg-[#002970] text-white border-[#002970] shadow-sm'
+              : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <ShieldCheck className={`w-4 h-4 ${activeToolTab === 'VERIFY' ? 'text-[#00BAF2]' : 'text-emerald-600'}`} />
+          <span>Verify Customer Payment (Anti-Fraud)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveToolTab(activeToolTab === 'FEES' ? 'NONE' : 'FEES')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+            activeToolTab === 'FEES'
+              ? 'bg-[#002970] text-white border-[#002970] shadow-sm'
+              : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <Percent className={`w-4 h-4 ${activeToolTab === 'FEES' ? 'text-[#00BAF2]' : 'text-[#002970]'}`} />
+          <span>2026 UPI MDR Policy Advisor</span>
+        </button>
+      </div>
+
+      {activeToolTab === 'VERIFY' && (
+        <PaymentVerificationCard merchantId={merchantId} />
+      )}
+
+      {activeToolTab === 'FEES' && (
+        <MerchantFeeAdvisorCard merchantId={merchantId} />
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">

@@ -380,3 +380,134 @@ CREATE TABLE IF NOT EXISTS gemini_business_insights (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_gemini_insights_merchant ON gemini_business_insights(merchant_id, created_at);
+
+-- 23. Configurable UPI & Card Merchant Fee Policies (NPCI 2026 Framework)
+CREATE TABLE IF NOT EXISTS merchant_fee_policies (
+    policy_id TEXT PRIMARY KEY,
+    policy_version TEXT NOT NULL,
+    payment_instrument TEXT NOT NULL, -- 'SOUNDBOX_UPI', 'UPI_QR', 'DEBIT_CARD', 'CREDIT_CARD', 'NET_BANKING'
+    transaction_type TEXT NOT NULL DEFAULT 'P2M', -- 'P2M', 'P2P'
+    minimum_amount NUMERIC NOT NULL DEFAULT 0.00,
+    maximum_amount NUMERIC,
+    fee_rate NUMERIC NOT NULL DEFAULT 0.0000, -- e.g. 0.0040 for 0.40%
+    fee_cap NUMERIC DEFAULT NULL, -- e.g. 300.00 for large tickets
+    flat_fee NUMERIC DEFAULT 0.00,
+    merchant_category TEXT DEFAULT 'ALL',
+    sector TEXT DEFAULT 'GENERAL_RETAIL',
+    monthly_volume_threshold NUMERIC DEFAULT NULL, -- small merchant exemption
+    effective_from TEXT NOT NULL,
+    effective_until TEXT,
+    policy_source TEXT NOT NULL,
+    approval_status TEXT NOT NULL DEFAULT 'ACTIVE', -- 'DRAFT', 'ACTIVE', 'UPCOMING_ANNOUNCED', 'ARCHIVED'
+    configured_by TEXT NOT NULL DEFAULT 'SYSTEM',
+    verified_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fee_policies ON merchant_fee_policies(payment_instrument, approval_status, effective_from);
+
+-- 24. Device Telemetry & Operational Health Events
+CREATE TABLE IF NOT EXISTS device_health_events (
+    id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL, -- 'OFFLINE_ALERT', 'LOW_BATTERY_ALERT', 'STALE_PING', 'UNUSUAL_INACTIVITY'
+    severity TEXT NOT NULL, -- 'INFO', 'WARNING', 'CRITICAL'
+    battery_level INTEGER,
+    minutes_offline INTEGER,
+    diagnostic_message TEXT NOT NULL,
+    resolution_status TEXT NOT NULL DEFAULT 'OPEN', -- 'OPEN', 'ACKNOWLEDGED', 'RESOLVED'
+    support_ticket_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_device_events ON device_health_events(merchant_id, resolution_status);
+
+-- 25. Algorithmic Customer Segments for Targeted Marketing
+CREATE TABLE IF NOT EXISTS customer_segments (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    segment_code TEXT NOT NULL, -- 'REGULAR', 'LAPSED', 'HIGH_SPEND', 'FALLING_FREQUENCY'
+    segment_name TEXT NOT NULL,
+    customer_count INTEGER NOT NULL DEFAULT 0,
+    criteria_json TEXT NOT NULL,
+    customer_ids_json TEXT NOT NULL,
+    last_computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(merchant_id, segment_code)
+);
+
+-- 26. Authorized Merchant Payment Links (Khata Collection Recovery)
+CREATE TABLE IF NOT EXISTS payment_links (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    customer_id TEXT REFERENCES customer_records(id),
+    order_id TEXT NOT NULL UNIQUE,
+    amount NUMERIC NOT NULL,
+    purpose TEXT NOT NULL,
+    short_url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'CREATED', -- 'CREATED', 'PAID', 'EXPIRED', 'CANCELLED'
+    expires_at TEXT NOT NULL,
+    paid_at TEXT,
+    utr_number TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_payment_links ON payment_links(merchant_id, status);
+
+-- 27. UPI Autopay Mandates (Explicit Authorization Ledger)
+CREATE TABLE IF NOT EXISTS autopay_mandates (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    customer_id TEXT REFERENCES customer_records(id),
+    mandate_urn TEXT NOT NULL UNIQUE,
+    max_amount NUMERIC NOT NULL,
+    frequency TEXT NOT NULL DEFAULT 'AS_PRESENTED', -- 'WEEKLY', 'MONTHLY', 'AS_PRESENTED'
+    status TEXT NOT NULL DEFAULT 'PENDING_AUTH', -- 'PENDING_AUTH', 'ACTIVE', 'PAUSED', 'REVOKED'
+    authorized_at TEXT,
+    valid_until TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 28. Proactive Daily Business Brief Schedules
+CREATE TABLE IF NOT EXISTS daily_brief_schedules (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL UNIQUE REFERENCES merchants(id) ON DELETE CASCADE,
+    opening_time TEXT NOT NULL DEFAULT '08:00',
+    briefing_time TEXT NOT NULL DEFAULT '07:30',
+    timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata',
+    preferred_language TEXT NOT NULL DEFAULT 'en',
+    delivery_channel TEXT NOT NULL DEFAULT 'DASHBOARD_AND_AUDIO', -- 'DASHBOARD_AND_AUDIO', 'IN_APP_NOTIFICATION', 'SOUNDBOX_CHIME'
+    quiet_hours_start TEXT DEFAULT '22:00',
+    quiet_hours_end TEXT DEFAULT '07:00',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    last_run_at TEXT,
+    last_delivery_status TEXT DEFAULT 'PENDING',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 29. AI Token, Voice Seconds & Cost Accounting Events
+CREATE TABLE IF NOT EXISTS ai_usage_events (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    model_name TEXT NOT NULL,
+    feature TEXT NOT NULL, -- 'VOICE_ASSISTANT', 'GEMINI_AUDIT', 'DAILY_BRIEF', 'OUTBOUND_CALL'
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    stt_audio_seconds NUMERIC DEFAULT 0.0,
+    tts_audio_seconds NUMERIC DEFAULT 0.0,
+    estimated_cost_inr NUMERIC DEFAULT 0.0000,
+    latency_ms INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'SUCCESS',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_merchant ON ai_usage_events(merchant_id, created_at);
+
+-- 30. Agent Payment Permissions (Future Autonomous Agent Guardrails)
+CREATE TABLE IF NOT EXISTS agent_payment_permissions (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL UNIQUE REFERENCES merchants(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL,
+    max_per_transaction NUMERIC NOT NULL DEFAULT 1000.00,
+    max_daily_budget NUMERIC NOT NULL DEFAULT 5000.00,
+    allowed_mcc_categories TEXT NOT NULL DEFAULT 'GROCERY,SUPPLIES,INVENTORY',
+    is_active INTEGER NOT NULL DEFAULT 0, -- Disabled by default until regulatory NPCI framework notification
+    requires_step_up_auth INTEGER NOT NULL DEFAULT 1,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

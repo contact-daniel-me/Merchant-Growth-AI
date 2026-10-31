@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MerchantProfile, IndianLanguage, DailyBriefing } from '../types/index.ts';
 import { FinancialOverviewReport } from '../server/analyticsEngine.ts';
 import { translations } from '../utils/translations.ts';
+import { OfflineCacheService } from '../services/offlineCache.ts';
 import {
   Mic,
   TrendingUp,
@@ -16,6 +17,8 @@ import {
   RotateCcw,
   Building,
   HelpCircle,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 
 interface SimpleHomeScreenProps {
@@ -49,6 +52,14 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
     return t.greetingEvening;
   };
 
+  useEffect(() => {
+    if (briefing) {
+      OfflineCacheService.saveOfflineBriefing(merchant.id, briefing);
+    }
+  }, [merchant.id, briefing]);
+
+  const cacheStatus = OfflineCacheService.getFreshnessBadgeText(merchant.id);
+
   return (
     <div className="space-y-6 pb-20 md:pb-6">
       {/* 1. Top Greeting Card */}
@@ -72,7 +83,13 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {cacheStatus && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-medium border border-slate-200">
+                <Wifi className="w-3 h-3 text-[#00BAF2]" />
+                <span>{cacheStatus}</span>
+              </span>
+            )}
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>Soundbox Active</span>
