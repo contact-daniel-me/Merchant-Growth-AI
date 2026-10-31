@@ -330,6 +330,7 @@ export default function App() {
         ? briefing.audioBase64
         : null;
     let mimeType = 'audio/mpeg';
+    let ttsFailureReason = '';
 
     // 2. Otherwise ask the server (Sarvam text-to-speech).
     if (!base64) {
@@ -341,6 +342,7 @@ export default function App() {
         base64 = res.audioBase64;
         mimeType = res.mimeType || 'audio/mpeg';
       } else {
+        ttsFailureReason = res.error || 'voice service unavailable';
         console.warn('[Spoken summary] Sarvam TTS unavailable:', res.error);
       }
     }
@@ -366,10 +368,10 @@ export default function App() {
 
     if (token !== briefingPlayTokenRef.current) return;
     briefingAudioPlayerRef.current = null;
-    fallbackSpeechSynthesis(text, token);
+    fallbackSpeechSynthesis(text, token, ttsFailureReason);
   };
 
-  const fallbackSpeechSynthesis = (text: string, token: number) => {
+  const fallbackSpeechSynthesis = (text: string, token: number, serverReason = '') => {
     if (!('speechSynthesis' in window)) {
       setIsBriefingAudioPlaying(false);
       setBriefingAudioError('Voice playback is not available in this browser.');
@@ -385,8 +387,20 @@ export default function App() {
       te: 'te-IN',
     };
     utterance.lang = langMap[currentLanguage] || 'en-IN';
-    const voice = window.speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(currentLanguage));
-    if (voice) utterance.voice = voice;
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find((v) => v.lang.toLowerCase().startsWith(currentLanguage));
+    if (voice) {
+      utterance.voice = voice;
+    } else if (voices.length > 0) {
+      // No voice for this language: the browser would "speak" in silence. Say why instead.
+      const names: Record<IndianLanguage, string> = { en: 'English', hi: 'Hindi', ta: 'Tamil', kn: 'Kannada', te: 'Telugu' };
+      setIsBriefingAudioPlaying(false);
+      setBriefingAudioError(
+        `Could not play: the voice server is not reachable${serverReason ? ` (${serverReason})` : ''} and this browser has no ${names[currentLanguage]} voice.`
+      );
+      console.warn('[Spoken summary] No browser voice for', currentLanguage, '- server reason:', serverReason);
+      return;
+    }
     utterance.rate = 0.95;
 
     const done = () => {

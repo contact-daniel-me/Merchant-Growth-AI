@@ -1144,7 +1144,10 @@ async function startServer() {
       }
     });
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
+    // The production server is bundled into dist/server.js, so __dirname is already dist/.
+    const distPath = fs.existsSync(path.resolve(__dirname, 'index.html'))
+      ? __dirname
+      : path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));

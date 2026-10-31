@@ -1,0 +1,29 @@
+# Render Blueprint: deploys the full app (Express API + built frontend) from the Dockerfile.
+# In Render: New + > Blueprint > pick this repo. You will be asked for the secret values below.
+services:
+  - type: web
+    name: merchant-growiota
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/merchants
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Seed the demo merchants (Sharma Kirana etc.); without this a production DB starts empty.
+      - key: SEED_DEMO_DATA
+        value: "true"
+      # Free instances have no persistent disk; the demo database is re-seeded on each restart.
+      - key: DATABASE_PATH
+        value: /tmp/merchant.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SARVAM_STT_MODEL
+        value: saaras:v4
+      - key: SARVAM_TTS_MODEL
+        value: bulbul:v4-flash
+      - key: SARVAM_LLM_MODEL
+        value: sarvam-105b
