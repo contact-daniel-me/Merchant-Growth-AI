@@ -157,3 +157,4 @@ export const RepaymentScenarioCard: React.FC<RepaymentScenarioCardProps> = ({ me
     </div>
   );
 };
+

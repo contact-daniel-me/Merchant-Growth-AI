@@ -150,3 +150,4 @@ export const PaymentVerificationCard: React.FC<PaymentVerificationCardProps> = (
     </div>
   );
 };
+

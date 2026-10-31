@@ -63,3 +63,4 @@ test('OutboundCallService: Dispatches automated customer voice call with audit l
   assert.ok(found, 'Call must be saved in customer_voice_calls table');
   assert.strictEqual(found.recipientName, 'Ramesh Kumar');
 });
+

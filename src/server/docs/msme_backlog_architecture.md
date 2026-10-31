@@ -90,3 +90,4 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 - Connected to authoritative Soundbox & POS transactions.
 - Sales automatically decrement stock in real time.
 - Low-stock alerts triggered proactively when `current_stock <= reorder_level` and included in the Daily Business Brief.
+
