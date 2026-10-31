@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   Check,
   Building,
+  RotateCcw,
 } from 'lucide-react';
 
 interface BusinessGrowthScreenProps {

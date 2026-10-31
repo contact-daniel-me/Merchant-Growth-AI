@@ -97,7 +97,7 @@ export class GeminiAnalyticsService {
     // 2. Identify Overdue Khata Candidates for Voice Outreach
     const nowMs = Date.now();
     const overdueList = khata.customers.filter((c) => {
-      const dueTime = new Date(c.dueDate).getTime();
+      const dueTime = c.dueDate ? new Date(c.dueDate).getTime() : Number.POSITIVE_INFINITY;
       return c.status === 'OVERDUE' || dueTime < nowMs;
     });
 

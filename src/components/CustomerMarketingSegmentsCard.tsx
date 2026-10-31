@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api.ts';
+import type { IndianLanguage } from '../types/index.ts';
 import { Users, Send, CheckCircle2, ShieldCheck, Sparkles, MessageSquare, AlertCircle } from 'lucide-react';
 
 interface CustomerMarketingSegmentsCardProps {
   merchantId: string;
+  currentLanguage?: IndianLanguage;
 }
 
 export const CustomerMarketingSegmentsCard: React.FC<CustomerMarketingSegmentsCardProps> = ({ merchantId }) => {

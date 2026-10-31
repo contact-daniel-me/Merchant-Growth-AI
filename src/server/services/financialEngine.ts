@@ -82,6 +82,8 @@ export interface CashFlowForecast {
   projectedPeriodDays: number;
   currentBankBalanceEstimate: number;
   dailyLoanEmiDeduction: number;
+  /** Sum of projected net cash flow over the forecast days after today. */
+  projectedSevenDayInflow: number;
   dailyForecast: Array<{
     date: string;
     dayOfWeek: string;
@@ -436,6 +438,7 @@ export class FinancialEngine {
       projectedPeriodDays: daysAhead,
       currentBankBalanceEstimate: overview.settledAmount,
       dailyLoanEmiDeduction: dailyLoanEmi,
+      projectedSevenDayInflow: forecast.filter((f) => !f.isActual).reduce((sum, f) => sum + f.projectedNetCashFlow, 0),
       dailyForecast: forecast,
       assumptions: [
         'Forecast baseline uses rolling 7-day verified retail collections weighted by day-of-week retail seasonality.',

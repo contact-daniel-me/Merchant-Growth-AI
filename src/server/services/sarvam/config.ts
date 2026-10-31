@@ -9,12 +9,13 @@ export interface SarvamConfig {
 }
 
 export function getSarvamConfig(): SarvamConfig {
-  const apiKey = process.env.SARVAM_API_KEY || '';
+  // Trim and strip accidental quotes so a key pasted as SARVAM_API_KEY=" sk_... " still works.
+  const apiKey = (process.env.SARVAM_API_KEY || '').trim().replace(/^['"]|['"]$/g, '').trim();
 
   return {
     apiKey,
-    sttModel: process.env.SARVAM_STT_MODEL || 'saaras:v3',
-    ttsModel: process.env.SARVAM_TTS_MODEL || 'bulbul:v3',
+    sttModel: process.env.SARVAM_STT_MODEL || 'saaras:v4',
+    ttsModel: process.env.SARVAM_TTS_MODEL || 'bulbul:v4-flash',
     llmModel: process.env.SARVAM_LLM_MODEL || 'sarvam-105b',
     sttEndpoint: 'https://api.sarvam.ai/speech-to-text',
     ttsEndpoint: 'https://api.sarvam.ai/text-to-speech',
@@ -26,3 +27,6 @@ export function isSarvamConfigured(): boolean {
   const cfg = getSarvamConfig();
   return Boolean(cfg.apiKey && cfg.apiKey !== 'MY_SARVAM_API_KEY');
 }
+
+/** Request timeout for Sarvam REST calls, so a slow network never hangs the voice agent. */
+export const SARVAM_TIMEOUT_MS = 15000;

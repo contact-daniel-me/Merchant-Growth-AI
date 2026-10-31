@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { generateJson, generateText, availableProviders } from '../ai/llmService.ts';
 import { AppDatabase } from '../../db/database.ts';
 import { FinancialEngine } from '../financialEngine.ts';
 import { KhataService } from '../khataService.ts';
@@ -18,6 +18,8 @@ export interface ProcessVoiceQueryParams {
   merchantId: string;
   query?: string;
   audioBase64?: string;
+  /** MIME type of the recorded audio, e.g. audio/webm (also read from a data: URL prefix). */
+  mimeType?: string;
   language?: IndianLanguage;
   authenticated?: boolean;
 }
@@ -29,6 +31,10 @@ export interface VoiceQueryResponse {
   intentIdentified: string;
   toolInvoked: string;
   isAiFallback: boolean;
+  /** Which LLM answered ('gemini' | 'sarvam'), or 'none' when the deterministic path was used. */
+  aiProvider: string;
+  /** 'llm' when the reply was written by the model and passed the number check, else 'template'. */
+  responseSource: 'llm' | 'template';
   responseText: string;
   spokenResponseText: string;
   audioBase64: string | null;
@@ -58,10 +64,17 @@ export class SarvamAgentService {
     // 2. Transcribe voice if audio provided
     let queryText = (params.query || '').trim();
     let sttDurationSec = 0;
+    let sttError: string | undefined;
     if (audioBase64 && !queryText) {
-      const sttResult = await SpeechToTextService.transcribeAudio(audioBase64, language);
+      const sttResult = await SpeechToTextService.transcribeAudio(audioBase64, language, params.mimeType || 'audio/webm');
       queryText = sttResult.transcript.trim();
+      sttError = sttResult.error;
       sttDurationSec = 3.5; // Estimated speech duration
+    }
+
+    // Audio was sent but nothing was understood: say so instead of silently answering a default question.
+    if (audioBase64 && !queryText) {
+      return this.buildCouldNotHearResponse(merchantId, language, sttError);
     }
 
     if (!queryText) {
@@ -176,8 +189,8 @@ export class SarvamAgentService {
         agentName = 'Merchant Growth Agent';
         const trends = FinancialEngine.getSalesDeclineAnalysis(merchantId);
         verifiedData = trends;
-        allowedAmounts.push(trends.currentFourWeekAverage, trends.priorFourWeekAverage);
-        rawResponseDraft = `Your rolling 4-week sales stand at ₹${trends.currentFourWeekAverage.toLocaleString('en-IN')}, a ${trends.percentageChange}% change vs prior month.`;
+        allowedAmounts.push(trends.currentWeekCollections, trends.previousFourWeekAverage);
+        rawResponseDraft = `This week's sales are ₹${trends.currentWeekCollections.toLocaleString('en-IN')}, a ${trends.percentageChange}% change against the previous 4-week average of ₹${trends.previousFourWeekAverage.toLocaleString('en-IN')}.`;
         break;
       }
 
@@ -216,9 +229,32 @@ export class SarvamAgentService {
       allowedAmounts,
     };
 
-    // Produce localized and verified response
-    let finalLocalizedText = this.buildLocalizedResponseDraft(merchant, selectedTool, language, verifiedData, actionCard);
-    const verificationResult = FinancialFactVerifier.verifyAndEnforce(finalLocalizedText, factsPacket, language);
+    // Produce the reply: the LLM answers the merchant's actual question from the verified facts,
+    // then every number it used is checked against the ledger. Any mismatch -> deterministic template.
+    const templateText = this.buildLocalizedResponseDraft(merchant, selectedTool, language, verifiedData, actionCard);
+    let responseSource: 'llm' | 'template' = 'template';
+    let aiProvider = 'none';
+    let verificationResult = FinancialFactVerifier.verifyAndEnforce(templateText, factsPacket, language);
+
+    const llmReply = await this.phraseAnswerWithLLM({
+      queryText,
+      language,
+      merchant,
+      tool: selectedTool,
+      verifiedData,
+      draft: rawResponseDraft,
+      actionCard,
+    });
+    if (llmReply) {
+      const checked = FinancialFactVerifier.verifyAndEnforce(llmReply.text, factsPacket, language);
+      if (checked.isValid) {
+        verificationResult = checked;
+        responseSource = 'llm';
+        aiProvider = llmReply.provider;
+      } else {
+        console.warn(`[Agent] LLM reply rejected by number check ${JSON.stringify(checked.unverifiedNumbersFound)}; using template.`);
+      }
+    }
 
     // 6. Synthesize Audio via Sarvam Bulbul v4 Flash
     const ttsResult = await TextToSpeechService.synthesizeSpeech(verificationResult.spokenResponseText, language);
@@ -228,7 +264,7 @@ export class SarvamAgentService {
     const latencyMs = Date.now() - startTime;
     AiCostService.recordUsage({
       merchantId,
-      modelName: isAiFallback ? 'deterministic-semantic-matcher' : 'gemini-2.5-flash',
+      modelName: responseSource === 'llm' ? aiProvider : isAiFallback ? 'deterministic-semantic-matcher' : 'llm-router',
       feature: 'VOICE_ASSISTANT',
       inputTokens: Math.round(queryText.length / 4) + 150,
       outputTokens: Math.round(verificationResult.verifiedResponseText.length / 4),
@@ -279,6 +315,8 @@ export class SarvamAgentService {
       intentIdentified,
       toolInvoked: selectedTool,
       isAiFallback,
+      aiProvider,
+      responseSource,
       responseText: verificationResult.verifiedResponseText,
       spokenResponseText: verificationResult.spokenResponseText,
       audioBase64: ttsResult.audioBase64,
@@ -292,74 +330,119 @@ export class SarvamAgentService {
   /**
    * Structured Tool Selection using Gemini 2.5 Flash with Deterministic Semantic Fallback
    */
-  private static async selectToolWithLLM(queryText: string, merchantId: string): Promise<{
+  private static readonly TOOL_NAMES = [
+    'get_daily_collections',
+    'verify_payment',
+    'get_settlement_status',
+    'investigate_settlement',
+    'get_customer_dues',
+    'prepare_customer_reminder',
+    'get_device_health',
+    'get_merchant_fee_estimate',
+    'get_sales_trends',
+    'get_cashflow_summary',
+  ];
+
+  /**
+   * Tool selection with the configured LLM (Gemini or Sarvam), falling back to the keyword
+   * classifier only when no LLM is configured or the call fails.
+   */
+  private static async selectToolWithLLM(queryText: string, _merchantId: string): Promise<{
     selectedTool: string;
     toolParams: Record<string, any>;
     isAiFallback: boolean;
   }> {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const prompt = `Select the single best business tool for this shop owner's question.
+Tools:
+- get_daily_collections: today's sales, earnings, payment count.
+- verify_payment: whether a specific payment arrived (e.g. "Did 850 from Ravi arrive?"). Extract amount and payer_name_or_vpa.
+- get_settlement_status: bank credits, pending or in-transit money, settlement batches.
+- investigate_settlement: disputing missing settlement money, holds, variances.
+- get_customer_dues: khata / credit ledger, who owes money, overdue amounts.
+- prepare_customer_reminder: sending or preparing a payment reminder to a customer.
+- get_device_health: Soundbox battery, offline, terminal status.
+- get_merchant_fee_estimate: transaction charges, UPI MDR, card fees.
+- get_sales_trends: growth, decline, busy hours, comparison with earlier weeks.
+- get_cashflow_summary: tomorrow / next week forecast, loan EMI deductions.
 
-    if (apiKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey });
-        const prompt = `
-You are the Tool Calling Router for "Merchant by GrowIOTA" (merchant.growiota.in).
-Analyze the following merchant query and select the single best business tool from this list:
-- get_daily_collections: for today's sales, gross earnings, payment volume.
-- verify_payment: when asking if a specific payment arrived (e.g. "Did 850 from Ravi arrive?"). Extract amount and payer_name_or_vpa.
-- get_settlement_status: for bank credits, pending deposits, in-transit money, settlement batches.
-- investigate_settlement: for disputing missing settlements, escrow holds, or variances.
-- get_customer_dues: for Khata credit ledger, who owes money, overdue debt.
-- prepare_customer_reminder: for sending/preparing payment reminders to debtors.
-- get_device_health: for Soundbox battery, offline warnings, terminal status.
-- get_merchant_fee_estimate: for transaction charges, UPI 0.4% MDR policy, card fees.
-- get_sales_trends: for business growth, rush hours, comparison vs last month.
-- get_cashflow_summary: for tomorrow's forecast, upcoming loan EMI deductions.
+The question may be in English, Hindi, Tamil, Kannada, Telugu or a mix.
+Question: "${queryText}"
 
-Merchant Query: "${queryText}"
+Return JSON: {"selectedTool": string, "toolParams": {"amount"?: number, "payer_name_or_vpa"?: string, "customer_name"?: string}}`;
 
-Return ONLY a valid JSON object matching this schema:
-{
-  "selectedTool": string,
-  "toolParams": {
-    "amount"?: number,
-    "payer_name_or_vpa"?: string,
-    "customer_name"?: string
-  }
-}
-`;
+    const result = await generateJson<{ selectedTool?: string; toolParams?: Record<string, any> }>({
+      purpose: 'tool-routing',
+      prompt,
+      temperature: 0,
+      timeoutMs: 5000,
+    });
 
-        const generatePromise = ai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: prompt,
-          config: {
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-          },
-        });
-
-        // 2.5s Timeout guard to guarantee low-latency voice responses
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('LLM tool selection timed out')), 2500)
-        );
-
-        const res = (await Promise.race([generatePromise, timeoutPromise])) as any;
-
-        const parsed = JSON.parse(res.text || '{}');
-        if (parsed.selectedTool) {
-          return {
-            selectedTool: parsed.selectedTool,
-            toolParams: parsed.toolParams || {},
-            isAiFallback: false,
-          };
-        }
-      } catch (e: any) {
-        console.warn('[SarvamAgentService] LLM routing failed, using semantic classifier fallback:', e.message);
-      }
+    if (result?.data?.selectedTool && this.TOOL_NAMES.includes(result.data.selectedTool)) {
+      return { selectedTool: result.data.selectedTool, toolParams: result.data.toolParams || {}, isAiFallback: false };
     }
+    if (result) console.warn(`[Agent] LLM picked unknown tool '${result.data?.selectedTool}'; using keyword classifier.`);
 
-    // Deterministic Semantic Classifier Fallback
     return this.classifyQuerySemanticFallback(queryText);
+  }
+
+  /** Ask the LLM to answer the merchant's question in their language using only verified facts. */
+  private static async phraseAnswerWithLLM(params: {
+    queryText: string;
+    language: IndianLanguage;
+    merchant: any;
+    tool: string;
+    verifiedData: Record<string, any>;
+    draft: string;
+    actionCard?: any;
+  }): Promise<{ text: string; provider: string } | null> {
+    if (availableProviders().length === 0) return null;
+    const languageName: Record<IndianLanguage, string> = { en: 'English', hi: 'Hindi', ta: 'Tamil', kn: 'Kannada', te: 'Telugu' };
+    let facts = JSON.stringify(params.verifiedData);
+    if (facts.length > 6000) facts = facts.slice(0, 6000) + '…';
+
+    const system = `You are the voice business assistant for ${params.merchant.owner_name || 'the owner'} of "${params.merchant.business_name || 'the shop'}", a small shop in India.
+Reply in ${languageName[params.language]} in a warm, respectful, everyday spoken style. Common English words like UPI, settlement, EMI are fine.
+Rules:
+- Use ONLY numbers that appear in the facts or the draft. Never invent, round, estimate or calculate new numbers.
+- Answer the question that was asked first, in at most 3 short sentences; this will be spoken aloud.
+- If an action card was prepared, say it is waiting for the owner's approval. Never say an action was already done.
+- Plain text only. No markdown, no lists.`;
+
+    const prompt = `Question: "${params.queryText}"
+Tool used: ${params.tool}
+Verified facts (JSON): ${facts}
+Verified draft answer: ${params.draft}
+Action card prepared: ${params.actionCard ? params.actionCard.title || 'yes' : 'none'}`;
+
+    const result = await generateText({ purpose: 'answer-phrasing', system, prompt, temperature: 0.3, timeoutMs: 7000 });
+    return result ? { text: result.text, provider: result.provider } : null;
+  }
+
+  private static buildCouldNotHearResponse(merchantId: string, language: IndianLanguage, sttError?: string): VoiceQueryResponse {
+    const messages: Record<IndianLanguage, string> = {
+      en: "Sorry, I couldn't catch that. Please tap the mic and ask again.",
+      hi: 'माफ़ कीजिए, मैं सुन नहीं पाया। कृपया माइक दबाकर फिर से पूछें।',
+      ta: 'மன்னிக்கவும், சரியாகக் கேட்கவில்லை. மைக்கை அழுத்தி மீண்டும் கேளுங்கள்.',
+      kn: 'ಕ್ಷಮಿಸಿ, ಸರಿಯಾಗಿ ಕೇಳಿಸಲಿಲ್ಲ. ಮೈಕ್ ಒತ್ತಿ ಮತ್ತೆ ಕೇಳಿ.',
+      te: 'క్షమించండి, సరిగ్గా వినిపించలేదు. మైక్ నొక్కి మళ్ళీ అడగండి.',
+    };
+    const text = messages[language] || messages.en;
+    return {
+      conversationId: `CONV-${Date.now()}`,
+      recognizedTranscript: '',
+      agentName: 'Merchant Business Orchestrator',
+      intentIdentified: 'SPEECH_NOT_RECOGNIZED',
+      toolInvoked: 'none',
+      isAiFallback: true,
+      aiProvider: 'none',
+      responseSource: 'template',
+      responseText: text,
+      spokenResponseText: text,
+      audioBase64: null,
+      language,
+      verifiedData: { merchantId },
+      auditTrace: { rule: 'SPEECH_NOT_RECOGNIZED', sttError: sttError || 'empty transcript' },
+    };
   }
 
   /**

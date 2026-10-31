@@ -133,9 +133,9 @@ test('CustomerSegmentationService & WhatsApp Provider Abstraction', () => {
   // 2. Dispatch approved campaign with honest sandbox reporting
   const dispatch = CustomerSegmentationService.dispatchCampaign({
     merchantId,
-    segmentKey: 'LAPSED',
-    messageTemplate: 'Special weekend grocery discount for you!',
-    approvedBy: 'Sunil Sharma',
+    segmentCode: 'LAPSED',
+    customMessage: 'Special weekend grocery discount for you!',
+    approverName: 'Sunil Sharma',
   });
   assert.strictEqual(dispatch.deliveryStatus, 'SIMULATED_DISPATCH');
   assert.ok(dispatch.recipientsCount >= 0);
