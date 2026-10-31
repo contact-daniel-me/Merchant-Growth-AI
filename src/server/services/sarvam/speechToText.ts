@@ -1,11 +1,11 @@
 import { getSarvamConfig, isSarvamConfigured } from './config.ts';
 import { SarvamClient } from './client.ts';
 import { LanguageService } from './languageService.ts';
-import { IndianLanguage } from '../../../types/index.ts';
+import type { IndianLanguage } from '../../../types/index.ts';
 
 export class SpeechToTextService {
   /**
-   * Transcribes voice audio using Sarvam Saaras v4 STT model
+   * Transcribes voice audio using Sarvam Saaras STT model
    */
   public static async transcribeAudio(
     audioBufferOrBase64: Buffer | string,
@@ -34,8 +34,7 @@ export class SpeechToTextService {
     const formData = new FormData();
     const blob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
     formData.append('file', blob, 'merchant_audio.wav');
-    formData.append('model', config.sttModel);
-    formData.append('mode', 'transcribe');
+    formData.append('model', config.sttModel || 'saaras:v3');
     formData.append('language_code', sarvamLang);
 
     try {

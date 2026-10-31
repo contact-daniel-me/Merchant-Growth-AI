@@ -1,4 +1,4 @@
-import { IndianLanguage } from '../../../types/index.ts';
+import type { IndianLanguage } from '../../../types/index.ts';
 
 export interface SarvamLanguageInfo {
   code: IndianLanguage;
@@ -14,35 +14,35 @@ export const SUPPORTED_LANGUAGES: Record<IndianLanguage, SarvamLanguageInfo> = {
     sarvamCode: 'en-IN',
     name: 'English (India)',
     nativeName: 'English',
-    defaultSpeaker: 'meera',
+    defaultSpeaker: 'priya',
   },
   hi: {
     code: 'hi',
     sarvamCode: 'hi-IN',
     name: 'Hindi',
     nativeName: 'हिन्दी',
-    defaultSpeaker: 'shubh',
+    defaultSpeaker: 'shreya',
   },
   ta: {
     code: 'ta',
     sarvamCode: 'ta-IN',
     name: 'Tamil',
     nativeName: 'தமிழ்',
-    defaultSpeaker: 'ananya',
+    defaultSpeaker: 'kavya',
   },
   kn: {
     code: 'kn',
     sarvamCode: 'kn-IN',
     name: 'Kannada',
     nativeName: 'ಕನ್ನಡ',
-    defaultSpeaker: 'kavya',
+    defaultSpeaker: 'roopa',
   },
   te: {
     code: 'te',
     sarvamCode: 'te-IN',
     name: 'Telugu',
     nativeName: 'తెలుగు',
-    defaultSpeaker: 'pallavi',
+    defaultSpeaker: 'aditya',
   },
 };
 
@@ -52,7 +52,7 @@ export class LanguageService {
   }
 
   public static getSpeaker(lang: IndianLanguage = 'en'): string {
-    return SUPPORTED_LANGUAGES[lang]?.defaultSpeaker || 'meera';
+    return SUPPORTED_LANGUAGES[lang]?.defaultSpeaker || 'priya';
   }
 
   public static normalizeLanguage(input?: string): IndianLanguage {
@@ -65,4 +65,3 @@ export class LanguageService {
     return 'en';
   }
 }
-

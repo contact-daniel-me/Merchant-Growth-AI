@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CustomerCreditRecord, IndianLanguage } from '../types/index.ts';
+import type { CustomerCreditRecord, IndianLanguage } from '../types/index.ts';
 import { translations } from '../utils/translations.ts';
 import { api } from '../services/api.ts';
 import {
@@ -11,14 +11,21 @@ import {
   Clock,
   Phone,
   PhoneCall,
+  PhoneOff,
   Calendar,
   X,
   CreditCard,
   MessageSquare,
   Sparkles,
   Volume2,
+  VolumeX,
   Square,
+  Play,
+  Pause,
+  RotateCcw,
   ShieldCheck,
+  Radio,
+  Headphones,
 } from 'lucide-react';
 
 interface CustomerDuesScreenProps {
@@ -35,6 +42,20 @@ interface CustomerDuesScreenProps {
     notes?: string;
   }) => Promise<void>;
   onRecordRepayment?: (customerId: string, amount: number) => Promise<void>;
+}
+
+interface ActiveLiveCall {
+  callId: string;
+  customerName: string;
+  customerPhone: string;
+  outstandingBalance: number;
+  language: IndianLanguage;
+  scriptText: string;
+  audioBase64?: string | null;
+  status: 'DIALING' | 'IN_CALL' | 'COMPLETED';
+  durationSeconds: number;
+  elapsedSeconds: number;
+  isMuted: boolean;
 }
 
 export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
@@ -60,7 +81,15 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   const [callSuccessMsg, setCallSuccessMsg] = useState('');
   const [recentCalls, setRecentCalls] = useState<any[]>([]);
 
+  // Live Simulated Call Session
+  const [activeCall, setActiveCall] = useState<ActiveLiveCall | null>(null);
+  const callAudioRef = useRef<HTMLAudioElement | null>(null);
+  const callTimerRef = useRef<any>(null);
+
+  // Audio preview & history refs
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const [playingHistoryId, setPlayingHistoryId] = useState<string | null>(null);
+  const historyAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Form states
   const [name, setName] = useState('');
@@ -77,6 +106,23 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   // Load recent outbound calls
   useEffect(() => {
     loadCallHistory();
+    return () => {
+      if (callAudioRef.current) {
+        callAudioRef.current.pause();
+        callAudioRef.current = null;
+      }
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+      }
+      if (audioPreviewRef.current) {
+        audioPreviewRef.current.pause();
+        audioPreviewRef.current = null;
+      }
+      if (historyAudioRef.current) {
+        historyAudioRef.current.pause();
+        historyAudioRef.current = null;
+      }
+    };
   }, [merchantId]);
 
   const loadCallHistory = async () => {
@@ -88,20 +134,27 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
     }
   };
 
+  const getReminderScript = (record: CustomerCreditRecord, lang: IndianLanguage, storeName: string) => {
+    switch (lang) {
+      case 'hi':
+        return `नमस्ते ${record.customerName} जी, यह ${storeName} की ओर से एक विनम्र सूचना है। आपके खाते में ₹${record.outstandingBalance.toLocaleString('en-IN')} का बकाया है। कृपया इसे आज ही Paytm UPI द्वारा चुकता करें। धन्यवाद।`;
+      case 'ta':
+        return `வணக்கம் ${record.customerName}, இது ${storeName} இலிருந்து வரும் நினைவூட்டல் அழைப்பு. உங்கள் கணக்கில் ₹${record.outstandingBalance.toLocaleString('en-IN')} நிலுவையில் உள்ளது. தயவுசெய்து Paytm UPI மூலம் உடனே செலுத்தவும். நன்றி.`;
+      case 'kn':
+        return `ನಮಸ್ಕಾರ ${record.customerName} ಅವರೇ, ಇದು ${storeName} ವತಿಯಿಂದ ವಿನಮ್ರ ನೆನಪಿಸುವ ಕರೆ. ನಿಮ್ಮ ಖಾತೆಯಲ್ಲಿ ₹${record.outstandingBalance.toLocaleString('en-IN')} ಬಾಕಿ ಇದೆ. ದಯವಿಟ್ಟು Paytm UPI ಮೂಲಕ ಪಾವತಿಸಿ. ಧನ್ಯವಾದಗಳು.`;
+      case 'te':
+        return `నమస్కారం ${record.customerName} గారు, ఇది ${storeName} నుండి చెల్లింపు రిమైండర్. మీ ఖాతాలో ₹${record.outstandingBalance.toLocaleString('en-IN')} బాకీ ఉంది. దయచేసి Paytm UPI ద్వారా చెల్లించండి. ధన్యవాదాలు.`;
+      case 'en':
+      default:
+        return `Hello ${record.customerName}, this is a polite payment reminder from ${storeName}. An outstanding balance of ₹${record.outstandingBalance.toLocaleString('en-IN')} is pending on your store ledger. Please complete payment via Paytm UPI. Thank you.`;
+    }
+  };
+
   const handleOpenVoiceCallModal = (record: CustomerCreditRecord) => {
     setSelectedRecordForCall(record);
     const lang = currentLanguage;
     setCallLanguage(lang);
-
-    // Default polite localized script
-    const script =
-      lang === 'hi'
-        ? `नमस्ते ${record.customerName} जी, यह ${merchantName} की ओर से एक विनम्र सूचना है। आपके खाते में ₹${record.outstandingBalance} का बकाया है। कृपया इसे आज ही Paytm UPI द्वारा चुकता करें। धन्यवाद।`
-        : lang === 'ta'
-        ? `வணக்கம் ${record.customerName}, இது ${merchantName} இலிருந்து வரும் நினைவூட்டல் அழைப்பு. உங்கள் கணக்கில் ₹${record.outstandingBalance} நிலுவையில் உள்ளது. தயவுசெய்து Paytm UPI மூலம் உடனே செலுத்தவும். நன்றி.`
-        : `Hello ${record.customerName}, this is a polite payment reminder from ${merchantName}. An outstanding balance of ₹${record.outstandingBalance} is pending on your store ledger. Please complete payment via Paytm UPI. Thank you.`;
-
-    setCallScript(script);
+    setCallScript(getReminderScript(record, lang, merchantName));
   };
 
   const handlePlayCallPreview = async () => {
@@ -136,26 +189,172 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   const handleDispatchCall = async () => {
     if (!selectedRecordForCall) return;
     setIsDispatchingCall(true);
+
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.pause();
+      audioPreviewRef.current = null;
+      setIsPlayingAudioPreview(false);
+    }
+
     try {
+      const record = selectedRecordForCall;
       const res = await api.dispatchCustomerCall(merchantId, {
-        customerId: selectedRecordForCall.id,
-        recipientName: selectedRecordForCall.customerName,
-        recipientPhone: selectedRecordForCall.customerPhone,
+        customerId: record.id,
+        recipientName: record.customerName,
+        recipientPhone: record.customerPhone,
         callPurpose: 'PAYMENT_REMINDER',
         language: callLanguage,
         scriptText: callScript,
       });
 
-      setCallSuccessMsg(
-        `Automated Sarvam AI voice call successfully connected to ${selectedRecordForCall.customerName} (${selectedRecordForCall.customerPhone}). Outcome logged.`
-      );
+      const callId = res?.id || `CALL-${Date.now().toString().slice(-6)}`;
+      const duration = res?.durationSeconds || Math.max(10, Math.round(callScript.length / 15));
+      const audioBase64 = res?.audioBase64 || null;
+
+      // Close configuration modal and transition to Live Simulated Telephony Call
       setSelectedRecordForCall(null);
+
+      setActiveCall({
+        callId,
+        customerName: record.customerName,
+        customerPhone: record.customerPhone,
+        outstandingBalance: record.outstandingBalance,
+        language: callLanguage,
+        scriptText: callScript,
+        audioBase64,
+        status: 'DIALING',
+        durationSeconds: duration,
+        elapsedSeconds: 0,
+        isMuted: false,
+      });
+
+      // Reload call ledger in background
       await loadCallHistory();
+
+      // After simulated ring (1.5s), transition to IN_CALL and start Sarvam AI Bulbul neural audio playback
+      setTimeout(() => {
+        setActiveCall((prev) => (prev ? { ...prev, status: 'IN_CALL' } : null));
+
+        if (audioBase64) {
+          const audioUrl = audioBase64.startsWith('data:audio')
+            ? audioBase64
+            : `data:audio/wav;base64,${audioBase64}`;
+          const audio = new Audio(audioUrl);
+          callAudioRef.current = audio;
+          audio.play().catch((err) => console.warn('Call audio autoplay blocked:', err));
+
+          audio.onended = () => {
+            if (callTimerRef.current) clearInterval(callTimerRef.current);
+            setActiveCall((prev) => (prev ? { ...prev, status: 'COMPLETED' } : null));
+          };
+          audio.onerror = () => {
+            if (callTimerRef.current) clearInterval(callTimerRef.current);
+            setActiveCall((prev) => (prev ? { ...prev, status: 'COMPLETED' } : null));
+          };
+        }
+
+        // Live seconds counter
+        if (callTimerRef.current) clearInterval(callTimerRef.current);
+        callTimerRef.current = setInterval(() => {
+          setActiveCall((prev) => {
+            if (!prev || prev.status !== 'IN_CALL') return prev;
+            const nextSec = prev.elapsedSeconds + 1;
+            if (nextSec >= prev.durationSeconds && !prev.audioBase64) {
+              clearInterval(callTimerRef.current);
+              return { ...prev, elapsedSeconds: nextSec, status: 'COMPLETED' };
+            }
+            return { ...prev, elapsedSeconds: nextSec };
+          });
+        }, 1000);
+      }, 1500);
+
+      setCallSuccessMsg(
+        `Automated Sarvam AI voice call successfully connected to ${record.customerName} (${record.customerPhone}). Outcome logged.`
+      );
     } catch (err: any) {
       alert(`Call dispatch failed: ${err.message}`);
     } finally {
       setIsDispatchingCall(false);
     }
+  };
+
+  const handleEndCall = () => {
+    if (callAudioRef.current) {
+      callAudioRef.current.pause();
+    }
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+    }
+    setActiveCall((prev) => (prev ? { ...prev, status: 'COMPLETED' } : null));
+  };
+
+  const handleToggleMute = () => {
+    if (!activeCall) return;
+    const newMuted = !activeCall.isMuted;
+    if (callAudioRef.current) {
+      callAudioRef.current.muted = newMuted;
+    }
+    setActiveCall((prev) => (prev ? { ...prev, isMuted: newMuted } : null));
+  };
+
+  const handleReplayCallAudio = () => {
+    if (!activeCall || !activeCall.audioBase64) return;
+    if (callAudioRef.current) {
+      callAudioRef.current.currentTime = 0;
+      callAudioRef.current.play().catch((e) => console.warn(e));
+      setActiveCall((prev) => (prev ? { ...prev, status: 'IN_CALL', elapsedSeconds: 0 } : null));
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      callTimerRef.current = setInterval(() => {
+        setActiveCall((prev) => {
+          if (!prev || prev.status !== 'IN_CALL') return prev;
+          return { ...prev, elapsedSeconds: prev.elapsedSeconds + 1 };
+        });
+      }, 1000);
+    }
+  };
+
+  const handleCloseActiveCall = () => {
+    if (callAudioRef.current) {
+      callAudioRef.current.pause();
+      callAudioRef.current = null;
+    }
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+    }
+    setActiveCall(null);
+  };
+
+  const handlePlayHistoryAudio = (call: any) => {
+    if (playingHistoryId === call.id) {
+      if (historyAudioRef.current) {
+        historyAudioRef.current.pause();
+        historyAudioRef.current = null;
+      }
+      setPlayingHistoryId(null);
+      return;
+    }
+
+    if (historyAudioRef.current) {
+      historyAudioRef.current.pause();
+    }
+
+    if (call.audioBase64) {
+      const audioUrl = call.audioBase64.startsWith('data:audio')
+        ? call.audioBase64
+        : `data:audio/wav;base64,${call.audioBase64}`;
+      const audio = new Audio(audioUrl);
+      historyAudioRef.current = audio;
+      setPlayingHistoryId(call.id);
+      audio.onended = () => setPlayingHistoryId(null);
+      audio.onerror = () => setPlayingHistoryId(null);
+      audio.play().catch((e) => console.warn('History audio play error:', e));
+    }
+  };
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -191,6 +390,22 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
       setRepayAmount('');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const getLanguageSpeakerLabel = (lang: IndianLanguage) => {
+    switch (lang) {
+      case 'hi':
+        return 'Hindi (hi-IN) · Voice: Shreya';
+      case 'ta':
+        return 'Tamil (ta-IN) · Voice: Kavya';
+      case 'kn':
+        return 'Kannada (kn-IN) · Voice: Roopa';
+      case 'te':
+        return 'Telugu (te-IN) · Voice: Aditya';
+      case 'en':
+      default:
+        return 'English (en-IN) · Voice: Priya';
     }
   };
 
@@ -267,7 +482,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
               {recentCalls.length} Calls Dispatched
             </div>
             <div className="text-[11px] text-slate-600 mt-0.5">
-              Powered by Sarvam AI Bulbul v4 Neural Voice
+              Powered by Sarvam AI Bulbul Neural Voice
             </div>
           </div>
         </div>
@@ -301,31 +516,37 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                         {r.customerName}
                       </span>
                       <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                           isOverdue
                             ? 'bg-rose-100 text-rose-800'
                             : 'bg-emerald-100 text-emerald-800'
                         }`}
                       >
-                        {isOverdue ? 'OVERDUE' : 'CURRENT'}
+                        {r.status}
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                      <span className="flex items-center gap-1">
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span className="flex items-center gap-1 font-mono">
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
                         <span>{r.customerPhone}</span>
                       </span>
+
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                         <span>Due: {r.dueDate}</span>
                       </span>
-                      {r.notes && <span className="text-slate-400 italic">&ldquo;{r.notes}&rdquo;</span>}
                     </div>
+
+                    {r.notes && (
+                      <p className="text-xs text-slate-500 italic mt-0.5 line-clamp-1">
+                        &ldquo;{r.notes}&rdquo;
+                      </p>
+                    )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 self-start sm:self-auto">
-                    <div className="text-left sm:text-right">
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-3 sm:gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                    <div className="text-right">
                       <div className="text-base sm:text-lg font-bold text-slate-900">
                         ₹{r.outstandingBalance.toLocaleString('en-IN')}
                       </div>
@@ -347,7 +568,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                       {/* AI Voice Outreach Call Trigger */}
                       <button
                         onClick={() => handleOpenVoiceCallModal(r)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#002970] text-white hover:bg-[#001f55] shadow-xs cursor-pointer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#002970] text-white hover:bg-[#001f55] shadow-xs cursor-pointer transition active:scale-98"
                         title="Dispatch automated Sarvam AI voice call"
                       >
                         <PhoneCall className="w-3.5 h-3.5 text-[#00BAF2]" />
@@ -383,13 +604,13 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
               <h3 className="text-sm font-bold text-slate-900">Recent Automated Voice Outreach Calls</h3>
             </div>
             <span className="text-xs text-slate-500 font-mono">
-              Sarvam Bulbul v4 Neural Telephony
+              Sarvam AI Bulbul Neural Telephony
             </span>
           </div>
 
           <div className="divide-y divide-slate-100 text-xs">
-            {recentCalls.slice(0, 5).map((call) => (
-              <div key={call.id} className="py-3 flex items-center justify-between gap-3">
+            {recentCalls.slice(0, 6).map((call) => (
+              <div key={call.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="space-y-0.5">
                   <div className="font-bold text-slate-900 flex items-center gap-2">
                     <span>{call.recipientName}</span>
@@ -406,18 +627,43 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                   </div>
                 </div>
 
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
-                  {call.callStatus}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {call.audioBase64 && (
+                    <button
+                      onClick={() => handlePlayHistoryAudio(call)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
+                        playingHistoryId === call.id
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {playingHistoryId === call.id ? (
+                        <>
+                          <Square className="w-3.5 h-3.5 fill-rose-700" />
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3.5 h-3.5 text-[#002970]" />
+                          <span>Play Audio</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    {call.callStatus}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Voice Call Confirmation & Script Modal */}
+      {/* Voice Call Configuration Modal */}
       {selectedRecordForCall && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 text-xs">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -429,7 +675,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                     Dispatch Automated AI Voice Outreach Call
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Powered by Sarvam AI · Customer Payment Reminder
+                    Powered by Sarvam AI Bulbul Neural Voice · Customer Payment Reminder
                   </p>
                 </div>
               </div>
@@ -458,36 +704,29 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                 </div>
                 <div>
                   <div className="text-[10px] text-slate-400">Balance Due</div>
-                  <div className="font-bold text-rose-600">₹{selectedRecordForCall.outstandingBalance}</div>
+                  <div className="font-bold text-rose-600">₹{selectedRecordForCall.outstandingBalance.toLocaleString('en-IN')}</div>
                 </div>
               </div>
 
               {/* Language Selection */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Call Language (Sarvam AI Voice)
+                  Call Language (Sarvam AI Voice Model)
                 </label>
                 <select
                   value={callLanguage}
                   onChange={(e) => {
                     const newLang = e.target.value as IndianLanguage;
                     setCallLanguage(newLang);
-                    const rec = selectedRecordForCall;
-                    const script =
-                      newLang === 'hi'
-                        ? `नमस्ते ${rec.customerName} जी, यह ${merchantName} की ओर से एक विनम्र सूचना है। आपके खाते में ₹${rec.outstandingBalance} का बकाया है। कृपया इसे आज ही Paytm UPI द्वारा चुकता करें। धन्यवाद।`
-                        : newLang === 'ta'
-                        ? `வணக்கம் ${rec.customerName}, இது ${merchantName} இலிருந்து வரும் நினைவூட்டல் அழைப்பு. உங்கள் கணக்கில் ₹${rec.outstandingBalance} நிலுவையில் உள்ளது. தயவுசெய்து Paytm UPI மூலம் உடனே செலுத்தவும். நன்றி.`
-                        : `Hello ${rec.customerName}, this is a polite payment reminder from ${merchantName}. An outstanding balance of ₹${rec.outstandingBalance} is pending on your store ledger. Please complete payment via Paytm UPI. Thank you.`;
-                    setCallScript(script);
+                    setCallScript(getReminderScript(selectedRecordForCall, newLang, merchantName));
                   }}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 font-medium cursor-pointer"
                 >
-                  <option value="en">English (Default)</option>
-                  <option value="hi">हिन्दी (Hindi)</option>
-                  <option value="ta">தமிழ் (Tamil)</option>
-                  <option value="kn">ಕನ್ನಡ (Kannada)</option>
-                  <option value="te">తెలుగు (Telugu)</option>
+                  <option value="en">English (India) - Speaker Priya</option>
+                  <option value="hi">हिन्दी (Hindi) - Speaker Shreya</option>
+                  <option value="ta">தமிழ் (Tamil) - Speaker Kavya</option>
+                  <option value="kn">ಕನ್ನಡ (Kannada) - Speaker Roopa</option>
+                  <option value="te">తెలుగు (Telugu) - Speaker Aditya</option>
                 </select>
               </div>
 
@@ -495,14 +734,14 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-slate-700">
-                    Spoken Voice Call Script (Gemini-Formulated)
+                    Spoken Voice Call Script (Sarvam Bulbul)
                   </label>
                   <button
                     onClick={handlePlayCallPreview}
                     className="text-[11px] text-[#002970] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     {isPlayingAudioPreview ? <Square className="w-3 h-3 fill-[#002970]" /> : <Volume2 className="w-3.5 h-3.5" />}
-                    <span>{isPlayingAudioPreview ? 'Stop Audio' : 'Listen Voice Preview'}</span>
+                    <span>{isPlayingAudioPreview ? 'Stop Preview' : 'Listen Voice Preview'}</span>
                   </button>
                 </div>
                 <textarea
@@ -536,11 +775,183 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                   type="button"
                   onClick={handleDispatchCall}
                   disabled={isDispatchingCall || !callScript.trim()}
-                  className="px-5 py-2 bg-[#002970] text-white rounded-xl font-bold hover:bg-[#001f55] shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 bg-[#002970] text-white rounded-xl font-bold hover:bg-[#001f55] shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 transition active:scale-98"
                 >
-                  <PhoneCall className="w-3.5 h-3.5 text-[#00BAF2]" />
-                  <span>{isDispatchingCall ? 'Connecting Telephony...' : 'Authorize & Dial Call'}</span>
+                  <PhoneCall className="w-4 h-4 text-[#00BAF2]" />
+                  <span>{isDispatchingCall ? 'Connecting Telephony...' : 'Connect to Sarvam AI & Make Call'}</span>
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIVE INTERACTIVE AI VOICE CALL CONSOLE */}
+      {activeCall && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+            {/* Top Call Status Bar */}
+            <div className="bg-[#002970] text-white p-5 text-center relative">
+              <button
+                onClick={handleCloseActiveCall}
+                className="absolute top-4 right-4 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-xs font-semibold text-sky-200 mb-3">
+                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span>Sarvam AI Neural Telephony Gateway</span>
+              </div>
+
+              {/* Avatar & Calling Waves */}
+              <div className="relative w-20 h-20 mx-auto my-2 flex items-center justify-center">
+                {activeCall.status === 'IN_CALL' && (
+                  <>
+                    <div className="absolute inset-0 rounded-full bg-[#00BAF2]/20 animate-ping" />
+                    <div className="absolute -inset-2 rounded-full border-2 border-[#00BAF2]/40 animate-pulse" />
+                  </>
+                )}
+                {activeCall.status === 'DIALING' && (
+                  <div className="absolute -inset-1 rounded-full border border-sky-300 animate-spin" />
+                )}
+                <div className="w-20 h-20 rounded-full bg-linear-to-tr from-[#002970] to-[#00BAF2] text-white font-bold text-2xl flex items-center justify-center shadow-lg relative z-10">
+                  {activeCall.customerName.slice(0, 2).toUpperCase()}
+                </div>
+              </div>
+
+              <h2 className="text-xl font-bold mt-2 text-white">{activeCall.customerName}</h2>
+              <p className="text-xs text-sky-200 font-mono mt-0.5">{activeCall.customerPhone}</p>
+              <div className="text-xs text-sky-100 font-medium mt-1">
+                Outstanding Ledger: ₹{activeCall.outstandingBalance.toLocaleString('en-IN')}
+              </div>
+
+              {/* Status Badge & Live Timer */}
+              <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-center gap-3">
+                {activeCall.status === 'DIALING' && (
+                  <div className="flex items-center gap-2 text-xs text-sky-200 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    <span>Dialing customer phone...</span>
+                  </div>
+                )}
+
+                {activeCall.status === 'IN_CALL' && (
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold uppercase tracking-wider">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Call Connected</span>
+                    </span>
+                    <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded-md">
+                      {formatTimer(activeCall.elapsedSeconds)}
+                    </span>
+                  </div>
+                )}
+
+                {activeCall.status === 'COMPLETED' && (
+                  <div className="flex items-center gap-2 text-xs text-emerald-300 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Call Completed & Recorded to Ledger</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Voice Body & Audio Waves */}
+            <div className="p-6 space-y-4">
+              {/* Soundwave Simulation when call is active */}
+              {activeCall.status === 'IN_CALL' && (
+                <div className="py-2 flex items-center justify-center gap-1.5 h-12">
+                  <div className="w-1.5 bg-[#00BAF2] rounded-full animate-bounce h-6" style={{ animationDelay: '0ms' }} />
+                  <div className="w-1.5 bg-[#002970] rounded-full animate-bounce h-10" style={{ animationDelay: '150ms' }} />
+                  <div className="w-1.5 bg-[#00BAF2] rounded-full animate-bounce h-8" style={{ animationDelay: '300ms' }} />
+                  <div className="w-1.5 bg-emerald-500 rounded-full animate-bounce h-11" style={{ animationDelay: '450ms' }} />
+                  <div className="w-1.5 bg-[#002970] rounded-full animate-bounce h-7" style={{ animationDelay: '200ms' }} />
+                  <div className="w-1.5 bg-[#00BAF2] rounded-full animate-bounce h-10" style={{ animationDelay: '350ms' }} />
+                  <div className="w-1.5 bg-emerald-500 rounded-full animate-bounce h-5" style={{ animationDelay: '100ms' }} />
+                </div>
+              )}
+
+              {/* Spoken Voice Script Card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                  <span className="flex items-center gap-1.5 text-[#002970] font-semibold">
+                    <Headphones className="w-3.5 h-3.5 text-[#00BAF2]" />
+                    <span>Sarvam Bulbul AI Voice Output</span>
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {getLanguageSpeakerLabel(activeCall.language)}
+                  </span>
+                </div>
+
+                <p className="text-slate-800 font-sans leading-relaxed italic bg-white p-3 rounded-xl border border-slate-200/80">
+                  &ldquo;{activeCall.scriptText}&rdquo;
+                </p>
+
+                <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                  <span>Call ID: {activeCall.callId}</span>
+                  <span>Audio Format: 24kHz Mono WAV</span>
+                </div>
+              </div>
+
+              {/* Regulatory Notice */}
+              <div className="flex items-center gap-2 text-[10px] text-slate-500 px-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Encrypted call session authenticated under Paytm Merchant Telephony Policy.</span>
+              </div>
+
+              {/* Call Controls */}
+              <div className="pt-2 flex items-center justify-center gap-3">
+                {activeCall.status !== 'COMPLETED' ? (
+                  <>
+                    <button
+                      onClick={handleToggleMute}
+                      className={`p-3.5 rounded-2xl border transition cursor-pointer ${
+                        activeCall.isMuted
+                          ? 'bg-rose-50 text-rose-600 border-rose-200'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
+                      }`}
+                      title={activeCall.isMuted ? 'Unmute' : 'Mute'}
+                    >
+                      {activeCall.isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                    </button>
+
+                    <button
+                      onClick={handleReplayCallAudio}
+                      className="p-3.5 rounded-2xl bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition cursor-pointer"
+                      title="Replay Voice Audio"
+                    >
+                      <RotateCcw className="w-5 h-5" />
+                    </button>
+
+                    <button
+                      onClick={handleEndCall}
+                      className="px-6 py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl font-bold flex items-center gap-2 shadow-md cursor-pointer transition active:scale-95"
+                    >
+                      <PhoneOff className="w-5 h-5" />
+                      <span>End Call</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3 w-full">
+                    {activeCall.audioBase64 && (
+                      <button
+                        onClick={handleReplayCallAudio}
+                        className="flex-1 py-3 px-4 rounded-xl border border-slate-300 font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Volume2 className="w-4 h-4 text-[#002970]" />
+                        <span>Replay Call Audio</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={handleCloseActiveCall}
+                      className="flex-1 py-3 px-4 bg-[#002970] text-white rounded-xl font-bold hover:bg-[#001f55] flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>Done & Return to Ledger</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -555,7 +966,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
               Record Repayment for {selectedRecordForPay.customerName}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Outstanding: ₹{selectedRecordForPay.outstandingBalance}
+              Outstanding: ₹{selectedRecordForPay.outstandingBalance.toLocaleString('en-IN')}
             </p>
             <form onSubmit={handleRepaySubmit} className="space-y-4 mt-4">
               <div>
@@ -595,7 +1006,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
         </div>
       )}
 
-      {/* Add Due Modal */}
+      {/* Add Store Credit Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">

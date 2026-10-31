@@ -1,7 +1,7 @@
 import { AppDatabase } from '../../db/database.ts';
 import { TextToSpeechService } from './textToSpeech.ts';
 import { ActionService } from '../actionService.ts';
-import { IndianLanguage } from '../../../types/index.ts';
+import type { IndianLanguage } from '../../../types/index.ts';
 
 export interface CustomerVoiceCallRecord {
   id: string;

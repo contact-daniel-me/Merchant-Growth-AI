@@ -1,11 +1,11 @@
 import { getSarvamConfig, isSarvamConfigured } from './config.ts';
 import { SarvamClient } from './client.ts';
 import { LanguageService } from './languageService.ts';
-import { IndianLanguage } from '../../../types/index.ts';
+import type { IndianLanguage } from '../../../types/index.ts';
 
 export class TextToSpeechService {
   /**
-   * Synthesizes natural human-sounding voice audio using Sarvam Bulbul v4 Flash
+   * Synthesizes natural human-sounding voice audio using Sarvam Bulbul Neural Voice
    */
   public static async synthesizeSpeech(
     text: string,
@@ -23,18 +23,18 @@ export class TextToSpeechService {
     // Limit text to 1000 characters for snappy voice response
     const sanitizedText = text.slice(0, 1000);
 
-    const body = {
-      text: sanitizedText,
-      language_code: sarvamLang,
-      model: config.ttsModel,
+    const body: Record<string, any> = {
+      inputs: [sanitizedText],
+      target_language_code: sarvamLang,
       speaker,
-      pace: 1.0,
+      model: config.ttsModel || 'bulbul:v3',
       speech_sample_rate: 24000,
+      enable_preprocessing: true,
     };
 
     try {
       const result = await SarvamClient.post(config.ttsEndpoint, body);
-      if (result.audios && Array.isArray(result.audios) && result.audios.length > 0) {
+      if (result && result.audios && Array.isArray(result.audios) && result.audios.length > 0) {
         return { audioBase64: result.audios[0] };
       }
       return { audioBase64: null };
