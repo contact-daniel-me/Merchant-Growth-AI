@@ -86,7 +86,7 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
 
   // Real Mobile Phone Call Modal States
   const [isRealCallModalOpen, setIsRealCallModalOpen] = useState(false);
-  const [realCallPhone, setRealCallPhone] = useState('+91 ');
+  const [realCallPhone, setRealCallPhone] = useState('+91 9943023522');
   const [realCallName, setRealCallName] = useState('My Mobile Phone');
   const [realCallLang, setRealCallLang] = useState<IndianLanguage>(currentLanguage);
   const [realCallScript, setRealCallScript] = useState(
