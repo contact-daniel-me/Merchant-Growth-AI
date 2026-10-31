@@ -29,6 +29,7 @@ import {
   Info,
   Server,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 
 interface CustomerDuesScreenProps {
@@ -87,13 +88,15 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   // Real Mobile Phone Call Modal States
   const [isRealCallModalOpen, setIsRealCallModalOpen] = useState(false);
   const [realCallPhone, setRealCallPhone] = useState('+91 9943023522');
-  const [realCallName, setRealCallName] = useState('My Mobile Phone');
+  const [realCallName, setRealCallName] = useState('Daniel');
   const [realCallLang, setRealCallLang] = useState<IndianLanguage>(currentLanguage);
   const [realCallScript, setRealCallScript] = useState(
-    'नमस्ते, यह मर्चेंट बाई ग्रोआयोटा से एक वास्तविक वॉइस कॉल है। सर्वम एआई बुलबुल न्यूरल वॉइस सिस्टम सही ढंग से काम कर रहा है।'
+    'Hello, this is Daniel from Merchant by GrowIOTA powered by Sarvam AI voice engine.'
   );
   const [isDialingRealCall, setIsDialingRealCall] = useState(false);
   const [realCallResponse, setRealCallResponse] = useState<any>(null);
+  const [realCallError, setRealCallError] = useState<string | null>(null);
+  const [realCallSuccessMsg, setRealCallSuccessMsg] = useState<string | null>(null);
   const [telephonyConfig, setTelephonyConfig] = useState<any>(null);
   const [showCarrierSetup, setShowCarrierSetup] = useState(false);
 
@@ -305,26 +308,39 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
   };
 
   const handleDialRealPhone = async () => {
-    if (!realCallPhone.trim() || !realCallScript.trim()) return;
+    if (!realCallPhone.trim() || !realCallScript.trim()) {
+      setRealCallError('Please provide both recipient phone number and script text.');
+      return;
+    }
     setIsDialingRealCall(true);
     setRealCallResponse(null);
+    setRealCallError(null);
+    setRealCallSuccessMsg(null);
 
     try {
       const res = await api.makeRealTestCall({
         phoneNumber: realCallPhone,
-        recipientName: realCallName,
+        recipientName: realCallName || 'Daniel',
         language: realCallLang,
         scriptText: realCallScript,
       });
 
+      if (!res) {
+        throw new Error('Telephony gateway returned empty response.');
+      }
+
       setRealCallResponse(res);
+      setRealCallSuccessMsg(
+        `Outbound cellular call queued via ${res.carrier || 'SARVAM_SAMVAAD'}! Your phone (${realCallPhone}) is ringing from ${telephonyConfig?.callerNumber || '+91 80642 69843'}. Attempt ID: ${res.carrierCallId || res.id}.`
+      );
+
       await loadCallHistory();
 
       // Launch simulated live call console so merchant can also hear it in-browser
       if (res?.audioBase64) {
         setActiveCall({
           callId: res.id,
-          customerName: realCallName,
+          customerName: realCallName || 'Daniel',
           customerPhone: realCallPhone,
           outstandingBalance: 0,
           language: realCallLang,
@@ -345,7 +361,8 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
         audio.onended = () => setActiveCall((prev) => (prev ? { ...prev, status: 'COMPLETED' } : null));
       }
     } catch (err: any) {
-      alert(`Real call dispatch error: ${err.message}`);
+      console.error('[Dial Real Phone Error]:', err);
+      setRealCallError(err.message || 'Call dispatch failed. Please verify carrier credentials.');
     } finally {
       setIsDialingRealCall(false);
     }
@@ -918,15 +935,42 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                 />
               </div>
 
-              {realCallResponse && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-[11px] space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Call Dispatched Successfully</span>
+              {/* Real Call Error Alert */}
+              {realCallError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-[11px] space-y-1 animate-in fade-in">
+                  <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Call Dispatch Error</span>
                   </div>
-                  <p className="text-[10px] text-slate-600">
-                    Call ID: {realCallResponse.id} · Status: {realCallResponse.callStatus} · Carrier: {realCallResponse.carrier || 'Standard'}
+                  <p className="text-[11px] text-rose-600 leading-relaxed">
+                    {realCallError}
                   </p>
+                </div>
+              )}
+
+              {/* Real Call Success Alert */}
+              {realCallSuccessMsg && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs space-y-2 animate-in fade-in">
+                  <div className="font-bold flex items-center gap-2 text-emerald-800">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span className="text-sm">Real Cellular Call Dispatched!</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700 leading-relaxed font-medium">
+                    {realCallSuccessMsg}
+                  </p>
+                  <div className="pt-1 flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg font-mono text-[10px] font-bold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      Ringing Phone Now
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsRealCallModalOpen(false)}
+                      className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-[10px] font-bold cursor-pointer"
+                    >
+                      Close Modal
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -945,8 +989,17 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                   disabled={isDialingRealCall || !realCallPhone.trim() || !realCallScript.trim()}
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50 transition active:scale-98"
                 >
-                  <PhoneCall className="w-4 h-4 text-emerald-200" />
-                  <span>{isDialingRealCall ? 'Connecting Telephony...' : 'Dial Real Phone Now'}</span>
+                  {isDialingRealCall ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
+                      <span>Connecting Sarvam Trunk...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PhoneCall className="w-4 h-4 text-emerald-200" />
+                      <span>Dial Real Phone Now</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

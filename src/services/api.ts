@@ -34,7 +34,12 @@ async function safeFetchJson<T>(url: string, options?: RequestInit, timeoutMs = 
     clearTimeout(timer);
 
     if (!res.ok) {
-      return { success: false, error: `HTTP ${res.status}: ${res.statusText}` };
+      try {
+        const errorData = await res.json();
+        return { success: false, error: errorData.error || errorData.message || `HTTP ${res.status}: ${res.statusText}` };
+      } catch {
+        return { success: false, error: `HTTP ${res.status}: ${res.statusText}` };
+      }
     }
 
     const contentType = res.headers.get('content-type') || '';
@@ -494,7 +499,10 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }, 25000);
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to dispatch voice call');
+    }
     return res.data;
   },
 
@@ -508,7 +516,10 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }, 25000);
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to dispatch voice call');
+    }
     return res.data;
   },
 

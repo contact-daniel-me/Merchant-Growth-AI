@@ -77,24 +77,23 @@ export class OutboundCallService {
     const callId = `CALL-${Date.now().toString().slice(-6)}`;
     const now = new Date().toISOString();
 
-    // 1. Synthesize conversational speech audio via Sarvam Bulbul
+    // 1 & 2. Run TTS speech synthesis and Telephony Gateway in parallel for minimal latency
     let audioBase64: string | null = null;
     let durationSeconds = Math.max(10, Math.min(45, Math.round(scriptText.length / 14)));
 
-    try {
-      const tts = await TextToSpeechService.synthesizeSpeech(scriptText, language);
-      audioBase64 = tts.audioBase64;
-    } catch (err: any) {
-      console.warn('[OutboundCallService] Speech synthesis error:', err.message);
-    }
+    const [ttsResult, dialResult] = await Promise.all([
+      TextToSpeechService.synthesizeSpeech(scriptText, language).catch((err: any) => {
+        console.warn('[OutboundCallService] Speech synthesis warning:', err.message);
+        return { audioBase64: null };
+      }),
+      TelephonyGateway.dialRealPhone({
+        callId,
+        recipientPhone,
+        recipientName,
+      }),
+    ]);
 
-    // 2. Trigger real phone call via Telephony Gateway
-    const dialResult = await TelephonyGateway.dialRealPhone({
-      callId,
-      recipientPhone,
-      recipientName,
-      audioBase64,
-    });
+    audioBase64 = ttsResult?.audioBase64 || null;
 
     const outcomeNote = dialResult.carrier === 'SIMULATION'
       ? `Automated ${callPurpose} call connected to ${recipientName} (${recipientPhone}). Sarvam Bulbul audio generated.`
