@@ -30,11 +30,21 @@ export class AppDatabase {
   }
 
   private static initSchema() {
-    const schemaPath = path.resolve(__dirname, 'schema.sql');
-    if (fs.existsSync(schemaPath)) {
-      const sql = fs.readFileSync(schemaPath, 'utf8');
-      this.instance!.exec(sql);
+    // In development this file runs from src/server/db/. In production it is bundled into
+    // dist/server.js, so __dirname is dist/ and schema.sql sits elsewhere (the Dockerfile copies it
+    // to src/server/db/). Previously a missing file was silently skipped, leaving an empty database
+    // and "no such table: merchants" on every API call.
+    const candidates = [
+      path.resolve(__dirname, 'schema.sql'),
+      path.resolve(process.cwd(), 'src/server/db/schema.sql'),
+      path.resolve(process.cwd(), 'dist/schema.sql'),
+      path.resolve(__dirname, '../src/server/db/schema.sql'),
+    ];
+    const schemaPath = candidates.find((p) => fs.existsSync(p));
+    if (!schemaPath) {
+      throw new Error(`[Database] schema.sql not found. Looked in: ${candidates.join(', ')}`);
     }
+    this.instance!.exec(fs.readFileSync(schemaPath, 'utf8'));
   }
 
   /**

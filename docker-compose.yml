@@ -10,6 +10,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - SEED_DEMO_DATA=true
       - DATABASE_PATH=/app/data/merchant.db
       - JWT_SECRET=merchant-growiota-production-secret-key-2026
       - SARVAM_API_KEY=${SARVAM_API_KEY}
