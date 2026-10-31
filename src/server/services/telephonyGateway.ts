@@ -51,7 +51,7 @@ export class TelephonyGateway {
     const sarvamWorkspace = process.env.SARVAM_WORKSPACE_ID;
     const sarvamAppId = process.env.SARVAM_APP_ID;
 
-    if (sarvamWorkspace && sarvamAppId) {
+    if (sarvamWorkspace) {
       return {
         provider: 'SARVAM_SAMVAAD',
         isConfigured: true,
@@ -206,21 +206,24 @@ export class TelephonyGateway {
         const apiKey = process.env.SARVAM_API_KEY || '';
         const orgId = process.env.SARVAM_ORG_ID || 'default';
         const workspaceId = process.env.SARVAM_WORKSPACE_ID!;
-        const appId = process.env.SARVAM_APP_ID!;
+        const appId = process.env.SARVAM_APP_ID || 'default';
         const callerPhone = process.env.SARVAM_CALLER_NUMBER;
 
-        const body = {
+        const body: Record<string, any> = {
           app_config: {
             app_id: appId,
             app_version: 1,
-            connection_config: {
-              agent_phone_number: callerPhone,
-            },
           },
           user_config: {
             user_phone_number: cleanPhone,
           },
         };
+
+        if (callerPhone) {
+          body.app_config.connection_config = {
+            agent_phone_number: callerPhone,
+          };
+        }
 
         const res = await fetch(`https://apps.sarvam.ai/api/outbounds/v1/orgs/${orgId}/workspaces/${workspaceId}/outbounds`, {
           method: 'POST',
@@ -273,3 +276,4 @@ export class TelephonyGateway {
     };
   }
 }
+
