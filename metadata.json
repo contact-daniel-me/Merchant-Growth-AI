@@ -1,0 +1,6 @@
+{
+  "name": "Paytm Merchant Intelligence",
+  "description": "AI-powered merchant business management platform with voice intelligence in Indian languages, financial reconciliation, cash flow, and growth insights.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
