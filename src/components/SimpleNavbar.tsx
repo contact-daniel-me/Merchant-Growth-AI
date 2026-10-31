@@ -60,30 +60,35 @@ export const SimpleNavbar: React.FC<SimpleNavbarProps> = ({
     <>
       {/* Top Header Bar for Desktop & Mobile */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-xs">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2 lg:gap-4">
           
           {/* Brand & Store Name */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
             <button
               onClick={() => onSelectTab('home')}
-              className="flex items-center gap-2.5 text-left focus:outline-none"
+              className="flex items-center gap-2.5 text-left focus:outline-none shrink-0"
             >
               {/* Paytm-inspired iconic deep blue badge */}
-              <div className="w-9 h-9 rounded-xl bg-[#002970] text-[#00BAF2] flex items-center justify-center font-bold text-lg shadow-sm border border-blue-900/10">
+              <div className="w-9 h-9 rounded-xl bg-[#002970] text-[#00BAF2] flex items-center justify-center font-bold text-lg shadow-sm border border-blue-900/10 shrink-0">
                 ₹
               </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-[#002970] tracking-tight leading-tight">
-                  {t.appName}
-                </span>
-                <span className="text-[11px] text-[#00BAF2] font-semibold -mt-0.5">
-                  {t.tagline}
+              <div className="flex flex-col justify-center">
+                <div className="flex items-center gap-1.5 leading-none">
+                  <span className="text-sm sm:text-base font-extrabold text-[#002970] tracking-tight whitespace-nowrap">
+                    Merchant
+                  </span>
+                  <span className="text-[10px] font-bold text-[#00BAF2] bg-blue-50/90 px-1.5 py-0.5 rounded border border-blue-100/80 leading-none whitespace-nowrap">
+                    by GrowIOTA
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium tracking-tight mt-1 whitespace-nowrap">
+                  {t.tagline || 'AI Business Intelligence'}
                 </span>
               </div>
             </button>
 
             {/* Switch Shop Dropdown */}
-            <div className="relative hidden sm:block">
+            <div className="relative hidden xl:block shrink-0">
               <button
                 onClick={() => setStoreDropdownOpen(!storeDropdownOpen)}
                 className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200/80 rounded-full text-xs font-medium text-[#172B4D] transition-colors"
@@ -120,8 +125,8 @@ export const SimpleNavbar: React.FC<SimpleNavbarProps> = ({
             </div>
           </div>
 
-          {/* Desktop Navigation Links (5 Items Max) */}
-          <nav className="hidden md:flex items-center gap-1 lg:gap-2">
+          {/* Desktop Navigation Links */}
+          <nav className="hidden md:flex items-center gap-1 lg:gap-1.5 shrink min-w-0">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -129,23 +134,23 @@ export const SimpleNavbar: React.FC<SimpleNavbarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => onSelectTab(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-2.5 lg:px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                     item.highlight && !isActive
                       ? 'bg-blue-50 text-[#002970] hover:bg-blue-100'
                       : isActive
-                      ? 'bg-[#002970] text-white shadow-sm'
+                      ? 'bg-[#002970] text-white shadow-xs'
                       : 'text-slate-600 hover:text-[#002970] hover:bg-slate-100'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#00BAF2]' : item.highlight ? 'text-[#00BAF2]' : 'text-slate-500'}`} />
-                  <span>{item.label}</span>
+                  <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#00BAF2]' : item.highlight ? 'text-[#00BAF2]' : 'text-slate-500'}`} />
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               );
             })}
           </nav>
 
           {/* Right Section: Language Switcher & Profile */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {/* Language Selector */}
             <div className="relative">
               <button

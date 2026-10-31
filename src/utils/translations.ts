@@ -52,8 +52,8 @@ export interface TranslationStrings {
 
 export const translations: Record<IndianLanguage, TranslationStrings> = {
   en: {
-    appName: 'Merchant by GrowIOTA',
-    tagline: 'Production Business Intelligence & Voice Outreach Platform',
+    appName: 'Merchant',
+    tagline: 'AI Business Intelligence',
     navHome: 'Home',
     navPayments: 'Payments',
     navMoney: 'My Money',
