@@ -18,6 +18,7 @@ import {
   PaymentMethod,
 } from './types/index.ts';
 import { FinancialOverviewReport } from './server/analyticsEngine.ts';
+import { api } from './services/api.ts';
 
 export default function App() {
   const [merchants, setMerchants] = useState<MerchantProfile[]>([]);
@@ -50,17 +51,22 @@ export default function App() {
 
   // 1. Initial Load: Fetch Merchants
   useEffect(() => {
-    fetch('/api/merchants')
-      .then((res) => res.json())
+    let isMounted = true;
+    api.getMerchants()
       .then((data) => {
-        if (data.success && data.data.length > 0) {
-          setMerchants(data.data);
-          const defaultMer = data.data.find((m: any) => m.id === currentMerchantId) || data.data[0];
+        if (!isMounted) return;
+        if (data && data.length > 0) {
+          setMerchants(data);
+          const defaultMer = data.find((m: any) => m.id === currentMerchantId) || data[0];
           setCurrentMerchant(defaultMer);
           setCurrentLanguage(defaultMer.primaryLanguage || 'hi');
         }
       })
       .catch((err) => console.error('Failed to load merchants:', err));
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // 2. Refresh tenant data when merchant ID changes
@@ -68,33 +74,33 @@ export default function App() {
     setIsLoading(true);
     try {
       const [
-        merRes,
-        overviewRes,
-        txnsRes,
-        settleRes,
-        khataRes,
-        growthRes,
-        briefingsRes,
+        mer,
+        overviewData,
+        txnsData,
+        settleData,
+        khataData,
+        growthData,
+        briefingsData,
       ] = await Promise.all([
-        fetch(`/api/merchants/${merchantId}`).then((r) => r.json()),
-        fetch(`/api/overview/${merchantId}`).then((r) => r.json()),
-        fetch(`/api/transactions/${merchantId}`).then((r) => r.json()),
-        fetch(`/api/settlements/${merchantId}`).then((r) => r.json()),
-        fetch(`/api/khata/${merchantId}`).then((r) => r.json()),
-        fetch(`/api/growth/${merchantId}`).then((r) => r.json()),
-        fetch(`/api/briefings/${merchantId}`).then((r) => r.json()),
+        api.getMerchant(merchantId),
+        api.getOverview(merchantId),
+        api.getTransactions(merchantId),
+        api.getSettlements(merchantId),
+        api.getKhata(merchantId),
+        api.getGrowth(merchantId),
+        api.getBriefings(merchantId),
       ]);
 
-      if (merRes.success) {
-        setCurrentMerchant(merRes.data);
-        setCurrentLanguage(merRes.data.primaryLanguage || 'hi');
+      if (mer) {
+        setCurrentMerchant(mer);
+        setCurrentLanguage(mer.primaryLanguage || 'hi');
       }
-      if (overviewRes.success) setOverview(overviewRes.data);
-      if (txnsRes.success) setTransactions(txnsRes.data);
-      if (settleRes.success) setSettlements(settleRes.data.settlements);
-      if (khataRes.success) setCreditRecords(khataRes.data.records);
-      if (growthRes.success) setGrowthInsights(growthRes.data);
-      if (briefingsRes.success) setBriefings(briefingsRes.data);
+      if (overviewData) setOverview(overviewData);
+      if (txnsData) setTransactions(txnsData);
+      if (settleData?.settlements) setSettlements(settleData.settlements);
+      if (khataData?.records) setCreditRecords(khataData.records);
+      if (growthData) setGrowthInsights(growthData);
+      if (briefingsData) setBriefings(briefingsData);
     } catch (err) {
       console.error('Error fetching merchant data:', err);
     } finally {
@@ -119,11 +125,7 @@ export default function App() {
     paymentMethod: PaymentMethod;
     customerName: string;
   }) => {
-    await fetch(`/api/transactions/${currentMerchantId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
+    await api.addTransaction(currentMerchantId, data);
     await refreshMerchantData(currentMerchantId);
 
     // Play instant soundbox voice chime
@@ -137,11 +139,7 @@ export default function App() {
     amount: number;
     dueDate: string;
   }) => {
-    await fetch(`/api/khata/${currentMerchantId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
+    await api.addKhataRecord(currentMerchantId, data);
     await refreshMerchantData(currentMerchantId);
   };
 
@@ -153,42 +151,30 @@ export default function App() {
 
   // Handle Confirmed Reminder Send
   const handleConfirmSendReminder = async (record: CustomerCreditRecord, message: string) => {
-    await fetch(`/api/actions/${currentMerchantId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'CUSTOMER_CREDIT_REMINDER',
-        title: `Reminder sent to ${record.customerName}`,
-        description: message,
-        status: 'EXECUTED',
-        requiresApproval: true,
-        createdBy: 'MERCHANT',
-        payload: {
-          customerName: record.customerName,
-          phone: record.customerPhone,
-          amount: record.outstandingBalance,
-        },
-      }),
+    await api.createAction(currentMerchantId, {
+      type: 'CUSTOMER_CREDIT_REMINDER',
+      title: `Reminder sent to ${record.customerName}`,
+      description: message,
+      status: 'EXECUTED',
+      requiresApproval: true,
+      createdBy: 'MERCHANT',
+      payload: {
+        customerName: record.customerName,
+        phone: record.customerPhone,
+        amount: record.outstandingBalance,
+      },
     });
     await refreshMerchantData(currentMerchantId);
   };
 
   // Action approval / reject handlers for voice assistant
   const handleApproveAction = async (actionId: string) => {
-    await fetch(`/api/actions/${currentMerchantId}/${actionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'EXECUTED', actor: currentMerchant?.ownerName || 'Merchant Owner' }),
-    });
+    await api.updateActionStatus(currentMerchantId, actionId, 'EXECUTED', currentMerchant?.ownerName || 'Merchant Owner');
     await refreshMerchantData(currentMerchantId);
   };
 
   const handleRejectAction = async (actionId: string) => {
-    await fetch(`/api/actions/${currentMerchantId}/${actionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'REJECTED', actor: currentMerchant?.ownerName || 'Merchant Owner' }),
-    });
+    await api.updateActionStatus(currentMerchantId, actionId, 'REJECTED', currentMerchant?.ownerName || 'Merchant Owner');
     await refreshMerchantData(currentMerchantId);
   };
 
@@ -275,8 +261,24 @@ export default function App() {
 
   if (!currentMerchant || !overview) {
     return (
-      <div className="min-h-screen bg-[#F5F8FC] flex items-center justify-center p-6 text-center text-xs text-rose-600">
-        Could not load shop information. Please refresh.
+      <div className="min-h-screen bg-[#F5F8FC] flex items-center justify-center p-6 text-center">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-sm w-full space-y-4">
+          <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center mx-auto text-xl font-bold">
+            !
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Shop Information Loading Error</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Could not connect to merchant data. Please retry or check your network.
+            </p>
+          </div>
+          <button
+            onClick={() => refreshMerchantData(currentMerchantId)}
+            className="w-full py-2.5 px-4 bg-[#00BAF2] hover:bg-[#0099cc] text-white text-xs font-semibold rounded-xl transition shadow-sm cursor-pointer"
+          >
+            Retry Connection
+          </button>
+        </div>
       </div>
     );
   }

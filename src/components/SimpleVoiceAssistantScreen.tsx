@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MerchantProfile, IndianLanguage, AgentChatMessage } from '../types/index.ts';
 import { translations } from '../utils/translations.ts';
+import { api } from '../services/api.ts';
 import {
   Mic,
   MicOff,
@@ -138,21 +139,13 @@ export const SimpleVoiceAssistantScreen: React.FC<SimpleVoiceAssistantScreenProp
     setLastRecognizedQuery(queryText.trim());
 
     try {
-      const response = await fetch('/api/voice/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantId: merchant.id,
-          query: queryText.trim(),
-          language: currentLanguage,
-          voicePin: '1947',
-          isAuthenticated: true,
-        }),
+      const result = await api.queryVoice({
+        merchantId: merchant.id,
+        query: queryText.trim(),
+        language: currentLanguage,
       });
 
-      const data = await response.json();
-      if (data.success && data.data) {
-        const result = data.data;
+      if (result) {
         setLastAnswer({
           text: result.responseText,
           spokenText: result.spokenResponseText || result.responseText,

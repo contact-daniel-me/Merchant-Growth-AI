@@ -6,7 +6,12 @@ import { IndianLanguage, MerchantAction } from '../types/index.ts';
 // Dedicated Multilingual Voice & Multi-Agent Orchestrator
 export class AgentOrchestrator {
   private static getGeminiClient(): GoogleGenAI | null {
-    const key = process.env.GEMINI_API_KEY;
+    const key =
+      typeof process !== 'undefined' && process?.env?.GEMINI_API_KEY
+        ? process.env.GEMINI_API_KEY
+        : typeof window !== 'undefined' && (window as any)?.__ENV?.GEMINI_API_KEY
+        ? (window as any).__ENV.GEMINI_API_KEY
+        : undefined;
     if (!key || key === 'MY_GEMINI_API_KEY') {
       return null;
     }

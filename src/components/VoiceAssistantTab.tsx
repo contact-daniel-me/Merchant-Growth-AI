@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { api } from '../services/api.ts';
 import { IndianLanguage, AgentChatMessage, MerchantAction, MerchantProfile } from '../types/index.ts';
 import {
   Mic,
@@ -206,23 +207,13 @@ export const VoiceAssistantTab: React.FC<VoiceAssistantTabProps> = ({
     setIsProcessing(true);
 
     try {
-      const response = await fetch('/api/voice/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantId: merchant.id,
-          query: queryText.trim(),
-          language: selectedLanguage,
-          voicePin: isAuthenticated ? '1947' : undefined,
-          isAuthenticated,
-        }),
+      const result = await api.queryVoice({
+        merchantId: merchant.id,
+        query: queryText.trim(),
+        language: selectedLanguage,
       });
 
-      const data = await response.json();
-
-      if (data.success && data.data) {
-        const result = data.data;
-
+      if (result) {
         if (result.requiresAuthentication && !isAuthenticated) {
           setShowPinModal(true);
         }
@@ -248,7 +239,7 @@ export const VoiceAssistantTab: React.FC<VoiceAssistantTabProps> = ({
           speakText(result.spokenResponseText, result.language);
         }
       } else {
-        throw new Error(data.error || 'Agent execution failed');
+        throw new Error('Agent execution failed');
       }
     } catch (err: any) {
       const errorMsg: AgentChatMessage = {
