@@ -204,8 +204,8 @@ export class TelephonyGateway {
     if (config.provider === 'SARVAM_SAMVAAD') {
       try {
         const apiKey = process.env.SARVAM_WORKSPACE_API_KEY || process.env.SARVAM_API_KEY || '';
-        const orgId = process.env.SARVAM_ORG_ID || 'default';
-        const workspaceId = process.env.SARVAM_WORKSPACE_ID!;
+        const orgId = process.env.SARVAM_ORG_ID || '019f7b92-d875-763a-9fa6-342c27866de6';
+        const workspaceId = process.env.SARVAM_WORKSPACE_ID || '019f7b92-d887-7867-be43-2c901321c38d';
         const appId = process.env.SARVAM_APP_ID || 'Conversatio-f9c1c7d2-6b12';
         const connectionId = process.env.SARVAM_CONNECTION_ID || '048e4c04-05-dbec92ac-b3fa';
         const callerPhone = process.env.SARVAM_CALLER_NUMBER || '+918064269843';
