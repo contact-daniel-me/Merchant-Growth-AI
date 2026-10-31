@@ -1,4 +1,4 @@
-# Saathi by GrowIOTA: Deployment & Security Operations Guide
+# Merchant by GrowIOTA: Deployment & Security Operations Guide (merchant.growiota.in)
 
 ---
 
@@ -48,10 +48,10 @@ The application utilizes `node:sqlite` in Write-Ahead Logging (`WAL`) mode with 
 Because SQLite is running in WAL mode, you can safely copy or backup the database without shutting down the server:
 ```bash
 # Linux/macOS
-sqlite3 saathi.db ".backup 'saathi-backup-$(date +%Y%m%d).db'"
+sqlite3 merchant.db ".backup 'merchant-backup-$(date +%Y%m%d).db'"
 
 # PowerShell (Windows)
-sqlite3 saathi.db ".backup 'saathi-backup-$(Get-Date -Format yyyyMMdd).db'"
+sqlite3 merchant.db ".backup 'merchant-backup-$(Get-Date -Format yyyyMMdd).db'"
 ```
 
 ---
@@ -65,3 +65,4 @@ sqlite3 saathi.db ".backup 'saathi-backup-$(Get-Date -Format yyyyMMdd).db'"
 - [x] **Audit Trail**: Every sensitive operation writes to immutable `audit_logs` with SHA-256 hash.
 - [x] **No Floating Point Financial Math**: All currency numbers are calculated with exact decimal rounding.
 - [x] **Regulatory Disclaimers**: Partner loans prominently state that final underwriting resides with the RBI-registered lending partner.
+

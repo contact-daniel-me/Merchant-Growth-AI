@@ -38,6 +38,8 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
   const [loanData, setLoanData] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [subData, setSubData] = useState<any>(null);
+  const [geminiData, setGeminiData] = useState<any>(null);
+  const [isGeminiRefreshing, setIsGeminiRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Loan apply modal
@@ -49,16 +51,17 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
 
   useEffect(() => {
     loadAllGrowthData();
-  }, [merchantId]);
+  }, [merchantId, currentLanguage]);
 
   const loadAllGrowthData = async () => {
     setIsLoading(true);
     try {
-      const [growthRes, loans, camps, sub] = await Promise.all([
+      const [growthRes, loans, camps, sub, gemini] = await Promise.all([
         fetch(`/api/growth/${merchantId}`).then((r) => r.json()),
         api.getLoanProducts(merchantId),
         api.getCampaigns(merchantId),
         api.getSubscription(merchantId),
+        api.getGeminiInsights(merchantId, currentLanguage),
       ]);
 
       if (growthRes.fullAnalysis) {
@@ -67,10 +70,23 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
       if (loans) setLoanData(loans);
       if (camps) setCampaigns(camps);
       if (sub) setSubData(sub);
+      if (gemini) setGeminiData(gemini);
     } catch (err) {
       console.error('Failed to load growth intelligence:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRefreshGemini = async () => {
+    setIsGeminiRefreshing(true);
+    try {
+      const fresh = await api.refreshGeminiInsights(merchantId, currentLanguage);
+      if (fresh) setGeminiData(fresh);
+    } catch (e) {
+      console.warn('Gemini refresh error:', e);
+    } finally {
+      setIsGeminiRefreshing(false);
     }
   };
 
@@ -176,6 +192,77 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
       {/* SECTION 1: RECOMMENDATIONS & 4-WEEK SALES DECLINE ANALYSIS */}
       {activeSection === 'RECOMMENDATIONS' && (
         <div className="space-y-4">
+          {/* Gemini AI Business Intelligence & Performance Audit */}
+          {geminiData && (
+            <div className="bg-gradient-to-br from-[#002970] to-[#001f55] rounded-2xl text-white p-5 sm:p-6 shadow-md border border-blue-900">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center">
+                    <Sparkles className="w-6 h-6 text-[#00BAF2]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#00BAF2] uppercase tracking-wider">
+                        Gemini 2.5 Analytics Engine
+                      </span>
+                      <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-mono">
+                        Real-Time Analysis
+                      </span>
+                    </div>
+                    <h2 className="text-lg font-bold text-white mt-0.5">
+                      Business Health Score: {geminiData.businessHealthScore}/100
+                    </h2>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleRefreshGemini}
+                  disabled={isGeminiRefreshing}
+                  className="self-start sm:self-center px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${isGeminiRefreshing ? 'animate-spin' : ''}`} />
+                  <span>{isGeminiRefreshing ? 'Analyzing...' : 'Refresh AI Analysis'}</span>
+                </button>
+              </div>
+
+              <p className="mt-3.5 text-xs sm:text-sm text-blue-100 leading-relaxed">
+                {geminiData.summaryNarrative}
+              </p>
+
+              {/* Gemini Actionable Insights Strip */}
+              {geminiData.insights && geminiData.insights.length > 0 && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {geminiData.insights.map((ins: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="p-3.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition text-xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#00BAF2]">
+                          {ins.type}
+                        </span>
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                            ins.urgency === 'HIGH'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          }`}
+                        >
+                          {ins.urgency} URGENCY
+                        </span>
+                      </div>
+                      <div className="font-bold text-white text-xs leading-snug">{ins.headline}</div>
+                      <p className="text-[11px] text-blue-200/90 leading-relaxed">{ins.analysis}</p>
+                      <div className="pt-1.5 border-t border-white/10 text-[10px] text-[#00BAF2] font-medium flex items-center gap-1">
+                        <span>Action: {ins.recommendedAction}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Declining sales benchmark banner */}
           {declineData && (
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
@@ -249,7 +336,7 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
                       onClick={() => onAskVoicePrompt(`How to implement: ${r.title}`)}
                       className="text-xs font-bold text-[#00BAF2] hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      <span>Ask Saathi</span>
+                      <span>Ask Merchant Assistant</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -345,7 +432,7 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
 
             {campaigns.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-400">
-                No active promotional campaigns. Ask Saathi voice assistant to draft an afternoon flyer!
+                No active promotional campaigns. Ask Merchant voice assistant to draft an afternoon flyer!
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
@@ -523,3 +610,4 @@ export const BusinessGrowthScreen: React.FC<BusinessGrowthScreenProps> = ({
     </div>
   );
 };
+

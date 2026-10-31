@@ -101,7 +101,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-slate-900 tracking-tight">
-            ₹{overview.todayCollections.toLocaleString('en-IN')}
+            ₹{(overview.todayCollections || 0).toLocaleString('en-IN')}
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
             <span className="font-semibold text-emerald-600 flex items-center">
@@ -109,7 +109,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               +14.2%
             </span>
             <span aria-hidden="true">·</span>
-            <span>{overview.todayTransactionsCount} transactions</span>
+            <span>{overview.todayTransactionsCount || 0} transactions</span>
           </div>
         </div>
 
@@ -122,7 +122,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-slate-900 tracking-tight">
-            ₹{overview.averageTransactionValue.toLocaleString('en-IN')}
+            ₹{(overview.averageTransactionValue || 0).toLocaleString('en-IN')}
           </div>
           <div className="mt-2 text-xs text-slate-500">
             <span>Evening peak AOV ₹1,420 · Morning ₹650</span>
@@ -138,10 +138,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-emerald-700 tracking-tight">
-            ₹{overview.inTransitSettlementAmount.toLocaleString('en-IN')}
+            ₹{(overview.inTransitSettlementAmount || 0).toLocaleString('en-IN')}
           </div>
           <div className="mt-2 text-xs text-slate-500 truncate">
-            <span>{merchant.settlementAccount.bankName} (23:30 IST)</span>
+            <span>{merchant.settlementAccount?.bankName || 'Bank'} (23:30 IST)</span>
           </div>
         </div>
 
@@ -154,10 +154,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-slate-900 tracking-tight">
-            ₹{overview.soundboxCollections.toLocaleString('en-IN')}
+            ₹{(overview.soundboxCollections || 0).toLocaleString('en-IN')}
           </div>
           <div className="mt-2 text-xs text-slate-500">
-            <span>{overview.soundboxTransactionsCount} verified instant chimes</span>
+            <span>{overview.soundboxTransactionsCount || 0} verified instant chimes</span>
           </div>
         </div>
       </div>
@@ -183,7 +183,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
           <div className="mt-4 h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={overview.weeklyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={overview.weeklyTrend || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="paytmBlueGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#002970" stopOpacity={0.25} />

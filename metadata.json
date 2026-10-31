@@ -1,6 +1,6 @@
 {
-  "name": "Saathi by GrowIOTA",
-  "description": "Commercial-grade multilingual AI business assistant for Paytm merchants, providing verified settlement reconciliation, customer credit (Khata), cash flow forecasting, growth analytics, and Sarvam AI voice intelligence.",
+  "name": "Merchant by GrowIOTA",
+  "description": "Production multilingual AI business intelligence platform for Indian retail merchants (merchant.growiota.in), providing verified settlement reconciliation, customer credit (Khata), cash flow forecasting, Gemini analytics, and Sarvam AI voice outreach intelligence.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Saathi by GrowIOTA: Production Dockerfile
+# Merchant by GrowIOTA: Production Dockerfile (merchant.growiota.in)
 # Multi-stage build for Node.js 24 + Express + Vite Frontend
 # -----------------------------------------------------------------------------
 
@@ -49,3 +49,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # Start production server
 CMD ["node", "dist/server.js"]
+

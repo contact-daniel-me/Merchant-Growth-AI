@@ -18,6 +18,19 @@ export interface VerifiedFinancialSummary {
   paymentMethodDistribution: Record<string, { count: number; totalAmount: number }>;
   hourlyVolume: { hour: string; count: number; amount: number }[];
   weeklyTrend: { date: string; day: string; amount: number; count: number }[];
+  todayCollections?: number;
+  averageTransactionValue?: number;
+  soundboxCollections?: number;
+  soundboxTransactionsCount?: number;
+  upiCollections?: number;
+  cardsCollections?: number;
+  walletCollections?: number;
+  pendingSettlementAmount?: number;
+  inTransitSettlementAmount?: number;
+  refundsCount?: number;
+  refundsAmount?: number;
+  paymentModeBreakdown?: Record<string, { count: number; totalAmount: number }>;
+  hourlyDistribution?: { hour: string; count: number; amount: number }[];
 }
 
 export interface SettlementReconciliationResult {
@@ -29,15 +42,23 @@ export interface SettlementReconciliationResult {
   totalVariance: number;
   totalMdrDeducted: number;
   batches: Array<{
+    id?: string;
     batchId: string;
     settlementDate: string;
     grossAmount: number;
     feeMdr: number;
+    totalMdrFee?: number;
     feeGst: number;
+    totalGst?: number;
     netDisbursed: number;
+    netDisbursedAmount?: number;
     status: string;
     utrNumber: string;
+    bankAccount?: string;
+    transactionCount?: number;
+    expectedDisbursementTime?: string;
     varianceAmount: number;
+    varianceNote?: string | null;
     varianceReason: string | null;
     discrepancyTransactions: Array<{
       id: string;
@@ -221,13 +242,20 @@ export class FinancialEngine {
       });
     }
 
+    const avgTicket = todayTxns.length > 0 ? Math.round((todayGross / todayTxns.length) * 100) / 100 : 0;
+    const soundboxAmt = methodDist['SOUNDBOX_UPI']?.totalAmount || 0;
+    const soundboxCount = methodDist['SOUNDBOX_UPI']?.count || 0;
+    const upiAmt = (methodDist['SOUNDBOX_UPI']?.totalAmount || 0) + (methodDist['UPI_QR']?.totalAmount || 0);
+    const cardsAmt = (methodDist['DEBIT_CARD']?.totalAmount || 0) + (methodDist['CREDIT_CARD']?.totalAmount || 0);
+    const walletAmt = methodDist['PAYTM_WALLET']?.totalAmount || 0;
+
     return {
       merchantId,
       businessName: merchant.business_name,
       todayDate,
       todayGrossCollections: Math.round(todayGross * 100) / 100,
       todayTransactionsCount: todayTxns.length,
-      todayAverageTicketSize: todayTxns.length > 0 ? Math.round((todayGross / todayTxns.length) * 100) / 100 : 0,
+      todayAverageTicketSize: avgTicket,
       todayMdrFeesTotal: Math.round(todayMdr * 100) / 100,
       todayGstFeesTotal: Math.round(todayGst * 100) / 100,
       todayNetCollections: Math.round(todayNet * 100) / 100,
@@ -239,6 +267,20 @@ export class FinancialEngine {
       paymentMethodDistribution: methodDist,
       hourlyVolume,
       weeklyTrend,
+      // Compatibility fields for seamless dashboard rendering
+      todayCollections: Math.round(todayGross * 100) / 100,
+      averageTransactionValue: avgTicket,
+      soundboxCollections: soundboxAmt,
+      soundboxTransactionsCount: soundboxCount,
+      upiCollections: upiAmt,
+      cardsCollections: cardsAmt,
+      walletCollections: walletAmt,
+      inTransitSettlementAmount: Math.round(inTransitAmount * 100) / 100,
+      pendingSettlementAmount: Math.round(pendingAmount * 100) / 100,
+      refundsCount: 0,
+      refundsAmount: 0,
+      paymentModeBreakdown: methodDist as any,
+      hourlyDistribution: hourlyVolume,
     };
   }
 
@@ -248,6 +290,7 @@ export class FinancialEngine {
    */
   public static reconcileSettlements(merchantId: string): SettlementReconciliationResult {
     const db = AppDatabase.getDB();
+    const merchant = db.prepare('SELECT * FROM merchants WHERE id = ?').get(merchantId) as any;
     const batches = db.prepare(`
       SELECT * FROM settlement_batches 
       WHERE merchant_id = ? 
@@ -290,15 +333,24 @@ export class FinancialEngine {
       }));
 
       return {
+        id: b.id,
         batchId: b.id,
+        merchantId: b.merchant_id || merchantId,
         settlementDate: b.settlement_date,
         grossAmount: gross,
         feeMdr,
+        totalMdrFee: feeMdr,
         feeGst,
+        totalGst: feeGst,
         netDisbursed: net,
+        netDisbursedAmount: net,
         status: b.status,
         utrNumber: b.utr_number,
+        bankAccount: merchant?.bank_name ? `${merchant.bank_name} (${merchant.account_number || '•••• 4019'})` : 'HDFC Bank (•••• 4019)',
+        transactionCount: txns.length,
+        expectedDisbursementTime: '23:30',
         varianceAmount: variance,
+        varianceNote: b.variance_note,
         varianceReason: b.variance_note,
         discrepancyTransactions: discrepancyTxns,
       };
@@ -474,3 +526,4 @@ export class FinancialEngine {
     };
   }
 }
+

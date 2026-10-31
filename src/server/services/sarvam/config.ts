@@ -26,3 +26,4 @@ export function isSarvamConfigured(): boolean {
   const cfg = getSarvamConfig();
   return Boolean(cfg.apiKey && cfg.apiKey !== 'MY_SARVAM_API_KEY');
 }
+

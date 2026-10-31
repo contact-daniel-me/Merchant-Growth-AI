@@ -1,4 +1,4 @@
-# Saathi by GrowIOTA: REST API Specification
+# Merchant by GrowIOTA: REST API Specification (merchant.growiota.in)
 *Commercial Merchant Business Intelligence API for Paytm Ecosystem*
 
 ---
@@ -115,3 +115,4 @@ Evaluates current 7-day sales against the preceding 4-week weekly average:
 ### `POST /api/integrations/paytm/webhook`
 - Validates signature using constant-time HMAC-SHA256
 - Prevents duplicate event processing via `paytm_webhook_events` idempotency store.
+

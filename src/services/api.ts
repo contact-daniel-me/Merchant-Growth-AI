@@ -73,9 +73,31 @@ export const api = {
 
   // 3. Overview
   async getOverview(merchantId: string): Promise<FinancialOverviewReport> {
-    const res = await safeFetchJson<FinancialOverviewReport>(`/api/overview/${merchantId}`);
+    const res = await safeFetchJson<any>(`/api/overview/${merchantId}`);
     if (res.success && res.data) {
-      return res.data;
+      const d = res.data;
+      return {
+        merchantId: d.merchantId || merchantId,
+        businessName: d.businessName || 'Merchant Store',
+        todayCollections: Number(d.todayCollections ?? d.todayGrossCollections ?? 0),
+        todayTransactionsCount: Number(d.todayTransactionsCount ?? 0),
+        averageTransactionValue: Number(d.averageTransactionValue ?? d.todayAverageTicketSize ?? 0),
+        soundboxCollections: Number(d.soundboxCollections ?? 0),
+        soundboxTransactionsCount: Number(d.soundboxTransactionsCount ?? 0),
+        upiCollections: Number(d.upiCollections ?? 0),
+        cardsCollections: Number(d.cardsCollections ?? 0),
+        walletCollections: Number(d.walletCollections ?? 0),
+        settledAmount: Number(d.settledAmount ?? 0),
+        pendingSettlementAmount: Number(d.pendingSettlementAmount ?? d.pendingAmount ?? 0),
+        inTransitSettlementAmount: Number(d.inTransitSettlementAmount ?? d.inTransitAmount ?? 0),
+        refundsCount: Number(d.refundsCount ?? 0),
+        refundsAmount: Number(d.refundsAmount ?? 0),
+        discrepanciesCount: Number(d.discrepanciesCount ?? 0),
+        paymentModeBreakdown: d.paymentModeBreakdown || d.paymentMethodDistribution || {},
+        hourlyDistribution: d.hourlyDistribution || d.hourlyVolume || [],
+        weeklyTrend: d.weeklyTrend || [],
+        ...d,
+      };
     }
     console.info(`[API] Using local analytics engine for overview ${merchantId}`);
     return DeterministicAnalyticsEngine.getFinancialOverview(merchantId);
@@ -139,9 +161,29 @@ export const api = {
 
   // 6. Settlements
   async getSettlements(merchantId: string): Promise<{ settlements: SettlementBatch[]; reconciliation: any }> {
-    const res = await safeFetchJson<{ settlements: SettlementBatch[]; reconciliation: any }>(`/api/settlements/${merchantId}`);
-    if (res.success && res.data) {
-      return res.data;
+    const res = await safeFetchJson<{ settlements: any[]; reconciliation: any }>(`/api/settlements/${merchantId}`);
+    if (res.success && res.data && Array.isArray(res.data.settlements)) {
+      const normalizedSettlements: SettlementBatch[] = res.data.settlements.map((b: any) => ({
+        id: b.id || b.batchId || `BATCH-${Date.now()}`,
+        merchantId: b.merchantId || merchantId,
+        settlementDate: b.settlementDate || new Date().toISOString().slice(0, 10),
+        grossAmount: Number(b.grossAmount || 0),
+        totalMdrFee: Number(b.totalMdrFee ?? b.feeMdr ?? 0),
+        totalGst: Number(b.totalGst ?? b.feeGst ?? 0),
+        netDisbursedAmount: Number(b.netDisbursedAmount ?? b.netDisbursed ?? 0),
+        bankAccount: b.bankAccount || 'HDFC Bank (•••• 4019)',
+        utrNumber: b.utrNumber || 'UTR-PENDING',
+        status: b.status || 'SETTLED',
+        transactionCount: Number(b.transactionCount || 0),
+        expectedDisbursementTime: b.expectedDisbursementTime || '23:30',
+        varianceAmount: Number(b.varianceAmount || 0),
+        varianceNote: b.varianceNote || b.varianceReason || '',
+        ...b,
+      }));
+      return {
+        settlements: normalizedSettlements,
+        reconciliation: res.data.reconciliation,
+      };
     }
 
     return {
@@ -416,5 +458,53 @@ export const api = {
       body: JSON.stringify({ language }),
     });
     return res;
+  },
+
+  // 18. Gemini Analytics Engine (Data -> Insight)
+  async getGeminiInsights(merchantId: string, language: IndianLanguage = 'en') {
+    const res = await safeFetchJson<any>(`/api/analytics/gemini/${merchantId}?lang=${language}`);
+    return res.data;
+  },
+
+  async refreshGeminiInsights(merchantId: string, language: IndianLanguage = 'en') {
+    const res = await safeFetchJson<any>(`/api/analytics/gemini/${merchantId}/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language }),
+    });
+    return res.data;
+  },
+
+  // 19. Sarvam AI Automated Customer Voice Outreach (Insight -> Action)
+  async getOutreachCalls(merchantId: string) {
+    const res = await safeFetchJson<any[]>(`/api/outreach/calls/${merchantId}`);
+    return res.data || [];
+  },
+
+  async dispatchCustomerCall(merchantId: string, payload: {
+    customerId?: string;
+    recipientName: string;
+    recipientPhone: string;
+    callPurpose?: string;
+    language?: IndianLanguage;
+    scriptText: string;
+    actionId?: string;
+  }) {
+    const res = await safeFetchJson<any>(`/api/outreach/calls/${merchantId}/dispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  // 20. Production Live Ingestion
+  async ingestLiveTransaction(merchantId: string, payload: any) {
+    const res = await safeFetchJson<any>(`/api/production/ingest/transaction/${merchantId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.data;
   },
 };

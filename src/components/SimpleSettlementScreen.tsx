@@ -145,14 +145,14 @@ export const SimpleSettlementScreen: React.FC<SimpleSettlementScreenProps> = ({
                         {batch.settlementDate === '2026-10-30' ? "Today's Settlement" : batch.settlementDate}
                       </div>
                       <div className="text-xs text-slate-500 font-mono">
-                        Bank: {batch.bankAccount} · UTR: {batch.utrNumber}
+                        Bank: {batch.bankAccount || 'Registered Bank'} · UTR: {batch.utrNumber || 'Pending'}
                       </div>
                     </div>
                   </div>
 
                   <div className="text-left sm:text-right">
                     <div className="text-lg font-bold font-mono text-[#172B4D]">
-                      ₹{batch.netDisbursedAmount.toLocaleString('en-IN')}
+                      ₹{(batch.netDisbursedAmount || 0).toLocaleString('en-IN')}
                     </div>
                     <div className="mt-0.5">
                       {batch.status === 'SETTLED' ? (

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DB_PATH = process.env.DATABASE_PATH || path.resolve(process.cwd(), 'saathi.db');
+const DB_PATH = process.env.DATABASE_PATH || path.resolve(process.cwd(), 'merchant.db');
 
 export class AppDatabase {
   private static instance: DatabaseSync | null = null;
@@ -38,11 +38,17 @@ export class AppDatabase {
   }
 
   /**
-   * Seeds realistic commercial data for 3 distinct merchants
-   * Preserves records if already present
+   * Seeds realistic commercial data for development & staging
+   * In strict production mode (NODE_ENV=production), synthetic seed is skipped
    */
   public static seedInitialData() {
     const db = this.instance!;
+
+    // In production, preserve strictly live data from real-world merchant integrations
+    if (process.env.NODE_ENV === 'production' && !process.env.SEED_DEMO_DATA) {
+      console.log('[Database] Production environment detected: Synthetic seed disabled.');
+      return;
+    }
 
     // Check if merchants already exist
     const countRow = db.prepare('SELECT COUNT(*) as count FROM merchants').get() as { count: number };
@@ -50,7 +56,7 @@ export class AppDatabase {
       return; // Already seeded
     }
 
-    console.log('[Database] Seeding initial production-grade Paytm merchant records into SQLite...');
+    console.log('[Database] Seeding initial staging Paytm merchant records into SQLite...');
 
     // Helper for password hash using standard PBKDF2
     function hashPassword(password: string, salt: string): string {
@@ -573,7 +579,7 @@ export class AppDatabase {
       'Sunil Sharma',
       'OWNER',
       'MERCHANT_LOGIN',
-      'Merchant signed in securely to Saathi Web Portal via 2FA.',
+      'Merchant signed in securely to Merchant Web Portal via 2FA.',
       now,
       '127.0.0.1',
       crypto.createHash('sha256').update(`AUD-001-mer_sharma_kirana-${now}`).digest('hex')

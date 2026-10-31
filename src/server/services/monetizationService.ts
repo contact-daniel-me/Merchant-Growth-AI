@@ -3,7 +3,7 @@ import { AppDatabase } from '../db/database.ts';
 export const SUBSCRIPTION_PLANS = [
   {
     tier: 'FREE',
-    name: 'Saathi Basic',
+    name: 'Merchant Basic',
     monthlyFee: 0,
     features: [
       'Basic Soundbox Voice Announcements',
@@ -14,7 +14,7 @@ export const SUBSCRIPTION_PLANS = [
   },
   {
     tier: 'PREMIUM',
-    name: 'Saathi Pro Merchant',
+    name: 'Merchant Pro',
     monthlyFee: 125,
     popular: true,
     features: [
@@ -28,7 +28,7 @@ export const SUBSCRIPTION_PLANS = [
   },
   {
     tier: 'BUSINESS_PRO',
-    name: 'Saathi Enterprise & Multi-Store',
+    name: 'Merchant Enterprise & Multi-Store',
     monthlyFee: 349,
     features: [
       'All Pro Features Included',
@@ -134,7 +134,7 @@ export class MonetizationService {
 
     return {
       disclaimer:
-        'IMPORTANT REGULATORY NOTICE: Saathi by GrowIOTA facilitates digital loan discovery in partnership with RBI-regulated banks and NBFCs. Final credit assessment, underwriting, interest rates, and loan disbursal are solely at the discretion of the lending partner.',
+        'IMPORTANT REGULATORY NOTICE: Merchant by GrowIOTA facilitates digital loan discovery in partnership with RBI-regulated banks and NBFCs. Final credit assessment, underwriting, interest rates, and loan disbursal are solely at the discretion of the lending partner.',
       partnerCount: partners.length,
       partners: partners.map((p) => ({
         id: p.id,
@@ -291,3 +291,4 @@ export class MonetizationService {
     return this.getCampaigns(merchantId);
   }
 }
+

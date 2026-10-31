@@ -119,7 +119,7 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
             </div>
           </div>
           <div className="mt-3 text-3xl font-bold font-mono text-[#172B4D] tracking-tight">
-            ₹{overview.todayCollections.toLocaleString('en-IN')}
+            ₹{(overview.todayCollections || 0).toLocaleString('en-IN')}
           </div>
           <div className="mt-2 text-xs font-semibold text-emerald-700 flex items-center gap-1">
             <TrendingUp className="w-3.5 h-3.5" />
@@ -139,7 +139,7 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
             {overview.todayTransactionsCount} <span className="text-base font-normal text-slate-500">payments</span>
           </div>
           <div className="mt-2 text-xs text-slate-500">
-            Avg bill: ₹{overview.averageTransactionValue.toLocaleString('en-IN')}
+            Avg bill: ₹{(overview.averageTransactionValue || 0).toLocaleString('en-IN')}
           </div>
         </div>
 
@@ -152,10 +152,10 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
             </div>
           </div>
           <div className="mt-3 text-3xl font-bold font-mono text-[#002970] tracking-tight">
-            ₹{overview.inTransitSettlementAmount.toLocaleString('en-IN')}
+            ₹{(overview.inTransitSettlementAmount || 0).toLocaleString('en-IN')}
           </div>
           <div className="mt-2 text-xs text-slate-600">
-            Reaches {merchant.settlementAccount.bankName} by 11:30 PM
+            Reaches {merchant.settlementAccount?.bankName || 'bank account'} by 11:30 PM
           </div>
         </div>
       </div>
@@ -201,10 +201,10 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
 
         <div className="mt-3.5 text-xs text-slate-700 leading-relaxed space-y-1.5">
           <p>
-            • Today's total sales are <strong>₹{overview.todayCollections.toLocaleString('en-IN')}</strong> from <strong>{overview.todayTransactionsCount} payments</strong>.
+            • Today's total sales are <strong>₹{(overview.todayCollections || 0).toLocaleString('en-IN')}</strong> from <strong>{overview.todayTransactionsCount || 0} payments</strong>.
           </p>
           <p>
-            • <strong>₹{overview.inTransitSettlementAmount.toLocaleString('en-IN')}</strong> will reach your {merchant.settlementAccount.bankName} account tonight by 11:30 PM.
+            • <strong>₹{(overview.inTransitSettlementAmount || 0).toLocaleString('en-IN')}</strong> will reach your {merchant.settlementAccount?.bankName || 'bank'} account tonight by 11:30 PM.
           </p>
           {overview.refundsCount > 0 && (
             <p>
@@ -248,7 +248,7 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
                   1 settlement is pending to bank
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
-                  ₹{overview.inTransitSettlementAmount.toLocaleString('en-IN')} will be credited tonight.
+                  ₹{(overview.inTransitSettlementAmount || 0).toLocaleString('en-IN')} will be credited tonight.
                 </div>
               </div>
             </div>

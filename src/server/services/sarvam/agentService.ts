@@ -59,7 +59,7 @@ export class SarvamAgentService {
 
     // 3. Identify Intent & Select Tool
     let intent = 'TODAY_COLLECTIONS';
-    let agentName = 'Saathi Merchant Orchestrator';
+    let agentName = 'Merchant Orchestrator';
     let verifiedData: Record<string, any> = {};
     let actionCard: any = undefined;
 
@@ -158,7 +158,7 @@ export class SarvamAgentService {
     // E. Default: Collections overview
     else {
       intent = 'TODAY_COLLECTIONS';
-      agentName = 'Saathi Merchant Orchestrator';
+      agentName = 'Merchant Orchestrator';
       const overview = FinancialEngine.getFinancialOverview(merchantId);
       verifiedData = overview;
     }

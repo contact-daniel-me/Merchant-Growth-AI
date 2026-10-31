@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Request, Response, NextFunction } from 'express';
 import { AppDatabase } from '../db/database.ts';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'saathi-paytm-production-secret-key-growiota-2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'merchant-growiota-production-secret-key-2026';
 const TOKEN_EXPIRY_SECONDS = 7 * 24 * 3600; // 7 days
 
 export interface AuthTokenPayload {
@@ -158,3 +158,4 @@ export class AuthService {
     next();
   }
 }
+

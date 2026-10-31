@@ -14,6 +14,9 @@ import { SarvamAgentService } from './src/server/services/sarvam/agentService.ts
 import { SpeechToTextService } from './src/server/services/sarvam/speechToText.ts';
 import { TextToSpeechService } from './src/server/services/sarvam/textToSpeech.ts';
 import { BriefService } from './src/server/services/briefService.ts';
+import { GeminiAnalyticsService } from './src/server/services/geminiAnalyticsService.ts';
+import { OutboundCallService } from './src/server/services/sarvam/outboundCallService.ts';
+import { DataSanitizer } from './src/server/services/dataSanitizer.ts';
 import { PaytmClient } from './src/server/integrations/paytm/client.ts';
 import { PaytmWebhookHandler } from './src/server/integrations/paytm/webhooks.ts';
 import { IndianLanguage } from './src/types/index.ts';
@@ -570,6 +573,184 @@ export async function createExpressApp() {
     }
   });
 
+  // ----------------------------------------------------
+  // 15. Gemini Analytics Engine (Data -> Insight)
+  // ----------------------------------------------------
+  app.get('/api/analytics/gemini/:merchantId', async (req, res) => {
+    try {
+      const lang = (req.query.lang as IndianLanguage) || 'en';
+      const report = await GeminiAnalyticsService.generateMerchantInsights(req.params.merchantId, lang);
+      res.json({ success: true, data: report });
+    } catch (err: any) {
+      console.error('[Gemini Analytics Error]', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/analytics/gemini/:merchantId/refresh', async (req, res) => {
+    try {
+      const { language = 'en' } = req.body;
+      const report = await GeminiAnalyticsService.generateMerchantInsights(req.params.merchantId, language);
+      res.json({ success: true, data: report });
+    } catch (err: any) {
+      console.error('[Gemini Analytics Refresh Error]', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 16. Sarvam AI Automated Customer Voice Outreach (Insight -> Action)
+  // ----------------------------------------------------
+  app.get('/api/outreach/calls/:merchantId', (req, res) => {
+    try {
+      const calls = OutboundCallService.getCalls(req.params.merchantId);
+      res.json({ success: true, data: calls });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/outreach/calls/:merchantId/dispatch', async (req, res) => {
+    try {
+      const {
+        customerId,
+        recipientName,
+        recipientPhone,
+        callPurpose = 'PAYMENT_REMINDER',
+        language = 'en',
+        scriptText,
+        actionId,
+      } = req.body;
+
+      if (!recipientName || !recipientPhone || !scriptText) {
+        return res.status(400).json({
+          success: false,
+          error: 'recipientName, recipientPhone, and scriptText are required.',
+        });
+      }
+
+      // Sanitize phone number before dispatch
+      const sanitizedPhone = DataSanitizer.sanitizePhone(recipientPhone);
+
+      const callResult = await OutboundCallService.dispatchCustomerCall({
+        merchantId: req.params.merchantId,
+        customerId,
+        recipientName: DataSanitizer.cleanText(recipientName),
+        recipientPhone: sanitizedPhone,
+        callPurpose,
+        language,
+        scriptText,
+        actionId,
+      });
+
+      res.json({ success: true, data: callResult });
+    } catch (err: any) {
+      console.error('[Outbound Call Dispatch Error]', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // 17. Production Live Data Ingestion & Sanitization Protocols
+  // ----------------------------------------------------
+  app.post('/api/production/ingest/transaction/:merchantId', (req, res) => {
+    try {
+      const merchantId = req.params.merchantId;
+      const { amount, paymentMethod, customerName, customerVpa, customerPhone } = req.body;
+
+      const numAmt = DataSanitizer.sanitizeAmount(amount);
+      const vpa = DataSanitizer.sanitizeVpa(customerVpa);
+      const cleanName = DataSanitizer.cleanText(customerName) || 'Walk-in Retail Customer';
+      const cleanPhone = customerPhone ? DataSanitizer.sanitizePhone(customerPhone) : null;
+
+      const isCard = (paymentMethod || '').includes('CARD');
+      const feeMdr = isCard ? Math.round(numAmt * 0.01) : 0;
+      const gstOnMdr = isCard ? Math.round(numAmt * 0.0018) : 0;
+      const net = numAmt - feeMdr - gstOnMdr;
+
+      const now = new Date().toISOString();
+      const id = `TXN-LIVE-${Date.now().toString().slice(-6)}`;
+      const orderId = `ORD-${Date.now().toString().slice(-8)}`;
+
+      const db = AppDatabase.getDB();
+      db.prepare(`
+        INSERT INTO transactions (
+          id, merchant_id, order_id, amount, fee_mdr, gst_on_mdr, 
+          net_settlement_amount, payment_method, customer_name, customer_vpa, 
+          timestamp, status, settlement_batch_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SETTLEMENT', 'SETTLE-TODAY-01')
+      `).run(
+        id,
+        merchantId,
+        orderId,
+        numAmt,
+        feeMdr,
+        gstOnMdr,
+        net,
+        paymentMethod || 'SOUNDBOX_UPI',
+        cleanName,
+        vpa,
+        now
+      );
+
+      res.json({
+        success: true,
+        data: {
+          id,
+          orderId,
+          amount: numAmt,
+          netSettlementAmount: net,
+          customerName: cleanName,
+          status: 'PENDING_SETTLEMENT',
+          timestamp: now,
+        },
+      });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/production/ingest/khata/:merchantId', (req, res) => {
+    try {
+      const merchantId = req.params.merchantId;
+      const { customerName, customerPhone, amount, dueDate, notes } = req.body;
+
+      const numAmt = DataSanitizer.sanitizeAmount(amount);
+      const cleanPhone = DataSanitizer.sanitizePhone(customerPhone);
+      const cleanName = DataSanitizer.cleanText(customerName);
+      const cleanNotes = DataSanitizer.cleanText(notes);
+
+      const overview = KhataService.addCreditRecord(merchantId, {
+        customerName: cleanName,
+        customerPhone: cleanPhone,
+        amount: numAmt,
+        dueDate: dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        notes: cleanNotes,
+      });
+
+      res.json({ success: true, data: overview });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/production/purge-synthetic/:merchantId', (req, res) => {
+    try {
+      const merchantId = req.params.merchantId;
+      const db = AppDatabase.getDB();
+
+      // Purge any mock prefix items for live environment
+      const deletedTxns = db.prepare("DELETE FROM transactions WHERE merchant_id = ? AND id NOT LIKE 'TXN-LIVE-%'").run(merchantId);
+      res.json({
+        success: true,
+        message: 'Synthetic data purged. Ready for 100% live POS & Soundbox ingestion.',
+        purgedTransactionsCount: deletedTxns.changes,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   return app;
 }
 
@@ -595,7 +776,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Saathi by GrowIOTA] Server running on http://0.0.0.0:${PORT}`);
+    console.log(`[Merchant by GrowIOTA] Server running on http://0.0.0.0:${PORT} (merchant.growiota.in)`);
   });
 }
 

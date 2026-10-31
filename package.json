@@ -7,7 +7,7 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --platform=node --bundle --format=esm --outfile=dist/server.js --packages=external",
     "start": "node dist/server.js",
-    "test": "tsx --test --test-concurrency=1 tests/auth.test.ts tests/financial.test.ts tests/khata.test.ts tests/monetization.test.ts tests/sarvam_voice.test.ts tests/paytm_integration.test.ts",
+    "test": "tsx --test --test-concurrency=1 tests/auth.test.ts tests/financial.test.ts tests/khata.test.ts tests/monetization.test.ts tests/sarvam_voice.test.ts tests/paytm_integration.test.ts tests/gemini_outreach.test.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

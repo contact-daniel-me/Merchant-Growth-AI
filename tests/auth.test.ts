@@ -39,3 +39,4 @@ test('AuthService: Detects tampered tokens', () => {
   const payload = AuthService.verifyToken(tamperedToken);
   assert.strictEqual(payload, null, 'Tampered token must fail validation');
 });
+

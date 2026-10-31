@@ -1,5 +1,5 @@
--- Saathi by GrowIOTA: Database Schema (SQLite / Relational)
--- ACID compliant, strict foreign keys, indexing for tenant isolation
+-- Merchant by GrowIOTA: Database Schema (merchant.growiota.in)
+-- Production-ready, ACID compliant, strict foreign keys, indexing for tenant isolation
 
 PRAGMA foreign_keys = ON;
 
@@ -345,3 +345,38 @@ CREATE TABLE IF NOT EXISTS daily_briefings (
     UNIQUE(merchant_id, briefing_date, language)
 );
 CREATE INDEX IF NOT EXISTS idx_briefings_lookup ON daily_briefings(merchant_id, briefing_date, language);
+
+-- 21. Automated Customer Voice Outreach Calls (Sarvam AI Telephony)
+CREATE TABLE IF NOT EXISTS customer_voice_calls (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    customer_id TEXT REFERENCES customer_records(id),
+    recipient_name TEXT NOT NULL,
+    recipient_phone TEXT NOT NULL,
+    call_purpose TEXT NOT NULL, -- 'PAYMENT_REMINDER', 'PROMOTIONAL_OUTREACH', 'SETTLEMENT_ALERT'
+    language TEXT NOT NULL,
+    script_text TEXT NOT NULL,
+    audio_base64 TEXT,
+    call_status TEXT NOT NULL DEFAULT 'SCHEDULED', -- 'SCHEDULED', 'INITIATED', 'COMPLETED', 'FAILED', 'DISMISSED'
+    triggered_by TEXT NOT NULL DEFAULT 'GEMINI_ANALYTICS',
+    action_id TEXT REFERENCES merchant_actions(id),
+    duration_seconds INTEGER DEFAULT 0,
+    outcome_note TEXT,
+    scheduled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    executed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_voice_calls_merchant ON customer_voice_calls(merchant_id, call_status);
+
+-- 22. Gemini Business Analytics & Actionable Insights
+CREATE TABLE IF NOT EXISTS gemini_business_insights (
+    id TEXT PRIMARY KEY,
+    merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    insight_type TEXT NOT NULL, -- 'GROWTH', 'CREDIT_RISK', 'SETTLEMENT_ALERT', 'PROMOTION'
+    headline TEXT NOT NULL,
+    detailed_analysis TEXT NOT NULL,
+    confidence_score REAL DEFAULT 0.95,
+    recommended_action TEXT NOT NULL,
+    action_payload_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_gemini_insights_merchant ON gemini_business_insights(merchant_id, created_at);

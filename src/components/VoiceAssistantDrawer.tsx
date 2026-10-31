@@ -42,7 +42,7 @@ export const VoiceAssistantDrawer: React.FC<VoiceAssistantDrawerProps> = ({
     {
       id: 'welcome-1',
       sender: 'assistant',
-      content: `Welcome ${merchant.ownerName}! I am Saathi, your Paytm voice business assistant. You can speak to me in English, Tamil, Hindi, Kannada, or Telugu. How can I help your business today?`,
+      content: `Welcome ${merchant.ownerName}! I am Merchant Assistant by GrowIOTA, your business voice companion. You can speak to me in English, Tamil, Hindi, Kannada, or Telugu. How can I help your business today?`,
       language: 'en',
       timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     },

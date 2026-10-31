@@ -35,3 +35,4 @@ test('KhataService: Records customer repayments correctly', () => {
 
   assert.strictEqual(updated?.outstandingBalance, target.outstandingBalance - 100);
 });
+

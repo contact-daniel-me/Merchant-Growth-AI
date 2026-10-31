@@ -29,3 +29,4 @@ export function isPaytmConfigured(): boolean {
   const cfg = getPaytmConfig();
   return Boolean(cfg.mid && cfg.merchantKey && cfg.mid !== 'MY_PAYTM_MID');
 }
+

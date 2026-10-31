@@ -29,12 +29,12 @@ export default function App() {
   // Exactly 6 Navigation Items: home, payments, money, dues, growth, assistant
   const [activeTab, setActiveTab] = useState<string>('home');
   const [currentLanguage, setCurrentLanguage] = useState<IndianLanguage>(() => {
-    return (localStorage.getItem('saathi_preferred_lang') as IndianLanguage) || 'en';
+    return (localStorage.getItem('merchant_preferred_lang') as IndianLanguage) || 'en';
   });
 
   const handleSelectLanguage = (lang: IndianLanguage) => {
     setCurrentLanguage(lang);
-    localStorage.setItem('saathi_preferred_lang', lang);
+    localStorage.setItem('merchant_preferred_lang', lang);
     if (currentMerchantId) {
       api.updateLanguage(currentMerchantId, lang).catch(() => {});
     }
@@ -70,7 +70,7 @@ export default function App() {
           setMerchants(data);
           const defaultMer = data.find((m: any) => m.id === currentMerchantId) || data[0];
           setCurrentMerchant(defaultMer);
-          const savedLang = localStorage.getItem('saathi_preferred_lang') as IndianLanguage;
+          const savedLang = localStorage.getItem('merchant_preferred_lang') as IndianLanguage;
           setCurrentLanguage(savedLang || 'en');
         }
       })
@@ -86,14 +86,14 @@ export default function App() {
     setIsLoading(true);
     try {
       const [
-        mer,
-        overviewData,
-        txnsData,
-        settleData,
-        khataData,
-        growthData,
-        briefingsData,
-      ] = await Promise.all([
+        merRes,
+        overviewRes,
+        txnsRes,
+        settleRes,
+        khataRes,
+        growthRes,
+        briefingsRes,
+      ] = await Promise.allSettled([
         api.getMerchant(merchantId),
         api.getOverview(merchantId),
         api.getTransactions(merchantId),
@@ -103,19 +103,32 @@ export default function App() {
         api.getBriefings(merchantId),
       ]);
 
-      if (mer) {
+      if (merRes.status === 'fulfilled' && merRes.value) {
+        const mer = merRes.value;
         setCurrentMerchant(mer);
-        const savedLang = localStorage.getItem('saathi_preferred_lang') as IndianLanguage;
+        const savedLang = localStorage.getItem('merchant_preferred_lang') as IndianLanguage;
         if (!savedLang && mer.primaryLanguage) {
           setCurrentLanguage(mer.primaryLanguage);
         }
       }
-      if (overviewData) setOverview(overviewData);
-      if (txnsData) setTransactions(txnsData);
-      if (settleData?.settlements) setSettlements(settleData.settlements);
-      if (khataData?.records) setCreditRecords(khataData.records);
-      if (growthData) setGrowthInsights(growthData);
-      if (briefingsData) setBriefings(briefingsData);
+      if (overviewRes.status === 'fulfilled' && overviewRes.value) {
+        setOverview(overviewRes.value);
+      }
+      if (txnsRes.status === 'fulfilled' && txnsRes.value) {
+        setTransactions(txnsRes.value);
+      }
+      if (settleRes.status === 'fulfilled' && settleRes.value?.settlements) {
+        setSettlements(settleRes.value.settlements);
+      }
+      if (khataRes.status === 'fulfilled' && khataRes.value?.records) {
+        setCreditRecords(khataRes.value.records);
+      }
+      if (growthRes.status === 'fulfilled' && growthRes.value) {
+        setGrowthInsights(growthRes.value);
+      }
+      if (briefingsRes.status === 'fulfilled' && briefingsRes.value) {
+        setBriefings(briefingsRes.value);
+      }
     } catch (err) {
       console.error('Error fetching merchant data:', err);
     } finally {
@@ -410,6 +423,8 @@ export default function App() {
           <CustomerDuesScreen
             creditRecords={creditRecords}
             currentLanguage={currentLanguage}
+            merchantId={currentMerchant.id}
+            merchantName={currentMerchant.businessName}
             onPrepareReminder={handlePrepareReminder}
             onAddCreditRecord={handleAddCreditRecord}
             onRecordRepayment={handleRecordRepayment}
