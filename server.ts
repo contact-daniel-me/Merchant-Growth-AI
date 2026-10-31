@@ -767,9 +767,18 @@ export async function createExpressApp() {
         scriptText,
       });
 
+      if (call.callStatus === 'FAILED') {
+        return res.status(400).json({
+          success: false,
+          error: call.outcomeNote || 'Telephony carrier dispatch failed.',
+          data: call,
+        });
+      }
+
       res.json({ success: true, data: call });
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
+      const errMsg = typeof err === 'object' && err?.message ? err.message : String(err);
+      res.status(500).json({ success: false, error: errMsg });
     }
   });
 

@@ -99,6 +99,9 @@ export class OutboundCallService {
       ? `Automated ${callPurpose} call connected to ${recipientName} (${recipientPhone}). Sarvam Bulbul audio generated.`
       : `Real cellular call dispatched via ${dialResult.carrier} to ${recipientName} (${recipientPhone}). Status: ${dialResult.status}. ${dialResult.message}`;
 
+    const isFailed = dialResult.status === 'FAILED' || dialResult.success === false;
+    const callStatus = isFailed ? 'FAILED' : 'COMPLETED';
+
     // Validate foreign keys to avoid SQLite constraint violations
     let validMerchantId = merchantId;
     try {
@@ -134,7 +137,7 @@ export class OutboundCallService {
         id, merchant_id, customer_id, recipient_name, recipient_phone, call_purpose,
         language, script_text, audio_base64, call_status, triggered_by, action_id,
         duration_seconds, outcome_note, scheduled_at, executed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETED', 'GEMINI_ANALYTICS', ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GEMINI_ANALYTICS', ?, ?, ?, ?, ?)
     `).run(
       callId,
       validMerchantId,
@@ -145,6 +148,7 @@ export class OutboundCallService {
       language,
       scriptText,
       audioBase64,
+      callStatus,
       validActionId,
       durationSeconds,
       outcomeNote,
@@ -186,7 +190,7 @@ export class OutboundCallService {
       language,
       scriptText,
       audioBase64,
-      callStatus: 'COMPLETED',
+      callStatus,
       triggeredBy: 'GEMINI_ANALYTICS',
       actionId,
       durationSeconds,

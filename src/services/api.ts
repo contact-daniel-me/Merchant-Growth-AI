@@ -18,6 +18,37 @@ import {
  * Ensures the app works smoothly whether connected to the Express backend or running standalone (Vite / GitHub Pages).
  */
 
+export function extractErrorMessage(err: any): string {
+  if (!err) return 'Unknown error occurred';
+  if (typeof err === 'string') {
+    if (err === '[object Object]') return 'An unexpected network error occurred. Please verify backend service.';
+    return err;
+  }
+  if (typeof err.message === 'string' && err.message !== '[object Object]') {
+    return err.message;
+  }
+  if (typeof err.error === 'string') {
+    return err.error;
+  }
+  if (typeof err.error === 'object') {
+    return extractErrorMessage(err.error);
+  }
+  if (typeof err.data === 'object' && err.data?.details) {
+    return extractErrorMessage(err.data.details);
+  }
+  if (typeof err.detail === 'string') {
+    return err.detail;
+  }
+  if (Array.isArray(err.detail)) {
+    return err.detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(', ');
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 async function safeFetchJson<T>(url: string, options?: RequestInit, timeoutMs = 3500): Promise<{ success: boolean; data?: T; error?: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -36,7 +67,8 @@ async function safeFetchJson<T>(url: string, options?: RequestInit, timeoutMs = 
     if (!res.ok) {
       try {
         const errorData = await res.json();
-        return { success: false, error: errorData.error || errorData.message || `HTTP ${res.status}: ${res.statusText}` };
+        const extracted = extractErrorMessage(errorData.error || errorData.message || errorData);
+        return { success: false, error: extracted || `HTTP ${res.status}: ${res.statusText}` };
       } catch {
         return { success: false, error: `HTTP ${res.status}: ${res.statusText}` };
       }
@@ -518,7 +550,7 @@ export const api = {
       body: JSON.stringify(payload),
     }, 25000);
     if (!res.success) {
-      throw new Error(res.error || 'Failed to dispatch voice call');
+      throw new Error(extractErrorMessage(res.error || 'Failed to dispatch voice call'));
     }
     return res.data;
   },

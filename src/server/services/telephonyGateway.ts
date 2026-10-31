@@ -245,12 +245,16 @@ export class TelephonyGateway {
             rawResponse: sarvamRes,
           };
         } else {
+          const detailMsg = sarvamRes.error?.data?.details
+            || sarvamRes.error?.message
+            || sarvamRes.message
+            || (typeof sarvamRes === 'object' ? JSON.stringify(sarvamRes) : String(sarvamRes));
           return {
             success: false,
             carrier: 'SARVAM_SAMVAAD',
             status: 'FAILED',
             recipientPhone: cleanPhone,
-            message: `Sarvam Samvaad dispatch failed: ${sarvamRes.message || JSON.stringify(sarvamRes)}`,
+            message: `Sarvam Samvaad dispatch failed (${res.status}): ${detailMsg}`,
             rawResponse: sarvamRes,
           };
         }

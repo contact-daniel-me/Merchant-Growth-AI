@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { CustomerCreditRecord, IndianLanguage } from '../types/index.ts';
 import { translations } from '../utils/translations.ts';
-import { api } from '../services/api.ts';
+import { api, extractErrorMessage } from '../services/api.ts';
 import {
   Users,
   Plus,
@@ -362,7 +362,8 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
       }
     } catch (err: any) {
       console.error('[Dial Real Phone Error]:', err);
-      setRealCallError(err.message || 'Call dispatch failed. Please verify carrier credentials.');
+      const displayMsg = extractErrorMessage(err);
+      setRealCallError(displayMsg || 'Call dispatch failed. Please verify carrier credentials.');
     } finally {
       setIsDialingRealCall(false);
     }
@@ -942,8 +943,8 @@ export const CustomerDuesScreen: React.FC<CustomerDuesScreenProps> = ({
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                     <span>Call Dispatch Error</span>
                   </div>
-                  <p className="text-[11px] text-rose-600 leading-relaxed">
-                    {realCallError}
+                  <p className="text-[11px] text-rose-600 leading-relaxed font-medium">
+                    {typeof realCallError === 'string' ? realCallError : JSON.stringify(realCallError)}
                   </p>
                 </div>
               )}

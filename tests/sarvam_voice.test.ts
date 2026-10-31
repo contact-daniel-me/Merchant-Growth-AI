@@ -70,7 +70,8 @@ test('BriefService: Formats spoken amounts for Indic number words', () => {
 });
 
 test('BriefService: Generates grounded daily brief in English and Tamil with zero hallucinated figures', async () => {
-  AppDatabase.getDB();
+  const db = AppDatabase.getDB();
+  db.prepare('DELETE FROM daily_briefings WHERE merchant_id = ?').run('mer_sharma_kirana');
   const enBrief = await BriefService.generateDailyBrief('mer_sharma_kirana', 'en');
 
   assert.ok(enBrief.id.startsWith('BRIEF-mer_sharma_kirana'));
