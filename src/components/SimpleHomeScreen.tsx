@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Wifi,
   WifiOff,
+  Loader2,
 } from 'lucide-react';
 
 interface SimpleHomeScreenProps {
@@ -30,6 +31,9 @@ interface SimpleHomeScreenProps {
   onNavigateTab: (tab: string) => void;
   onPlayBriefingAudio: (text: string) => void;
   isAudioPlaying: boolean;
+  /** True while the spoken summary audio is being prepared (Sarvam TTS request in flight). */
+  isAudioLoading?: boolean;
+  audioError?: string | null;
 }
 
 export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
@@ -41,6 +45,8 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
   onNavigateTab,
   onPlayBriefingAudio,
   isAudioPlaying,
+  isAudioLoading = false,
+  audioError = null,
 }) => {
   const t = translations[currentLanguage] || translations.hi;
 
@@ -197,15 +203,25 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                const textToSpeak =
-                  briefing?.spokenAudioText ||
-                  `सुनील जी, आज आपकी कुल बिक्री ₹${overview.todayCollections} रुपये रही जो ${overview.todayTransactionsCount} पेमेंट्स से आई। ₹${overview.inTransitSettlementAmount} रुपये आज रात आपके बैंक खाते में जमा हो जाएंगे।`;
-                onPlayBriefingAudio(textToSpeak);
+                // Fallback text (only if no brief has loaded yet) follows the selected language.
+                const fallbackText =
+                  currentLanguage === 'hi'
+                    ? `आज आपकी कुल बिक्री ₹${overview.todayCollections} रही, जो ${overview.todayTransactionsCount} पेमेंट्स से आई। ₹${overview.inTransitSettlementAmount} आज रात आपके बैंक खाते में जमा हो जाएंगे।`
+                    : `Today your total sales are ₹${overview.todayCollections} from ${overview.todayTransactionsCount} payments. ₹${overview.inTransitSettlementAmount} will reach your bank account tonight.`;
+                onPlayBriefingAudio(briefing?.spokenAudioText || fallbackText);
               }}
+              data-testid="listen-summary"
+              aria-busy={isAudioLoading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#002970] text-white hover:bg-[#001f55] text-xs font-semibold shadow-xs transition-colors"
             >
-              {isAudioPlaying ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#00BAF2]" />}
-              <span>{isAudioPlaying ? 'Stop Audio' : t.listenToSummary}</span>
+              {isAudioLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00BAF2]" />
+              ) : isAudioPlaying ? (
+                <VolumeX className="w-3.5 h-3.5" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-[#00BAF2]" />
+              )}
+              <span>{isAudioLoading ? 'Preparing audio…' : isAudioPlaying ? 'Stop Audio' : t.listenToSummary}</span>
             </button>
             <button
               onClick={() => onNavigateTab('payments')}
@@ -213,6 +229,11 @@ export const SimpleHomeScreen: React.FC<SimpleHomeScreenProps> = ({
             >
               {t.viewDetails}
             </button>
+            {audioError && (
+              <span role="status" className="text-[11px] text-red-600">
+                {audioError}
+              </span>
+            )}
           </div>
         </div>
 

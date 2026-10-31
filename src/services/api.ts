@@ -325,8 +325,11 @@ export const api = {
   },
 
   // 11. Daily Briefings
-  async getBriefings(merchantId: string): Promise<DailyBriefing[]> {
-    const res = await safeFetchJson<DailyBriefing[]>(`/api/briefings/${merchantId}`);
+  async getBriefings(merchantId: string, language?: IndianLanguage): Promise<DailyBriefing[]> {
+    // The server builds the brief AND synthesizes its audio on this call, which can take several
+    // seconds with Sarvam, so allow more than the 3.5 s default before falling back to mock data.
+    const query = language ? `?lang=${encodeURIComponent(language)}` : '';
+    const res = await safeFetchJson<DailyBriefing[]>(`/api/briefings/${merchantId}${query}`, undefined, 20000);
     if (res.success && res.data) {
       return res.data;
     }
@@ -338,7 +341,7 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ language }),
-    });
+    }, 20000);
     if (res.success && res.data) {
       return res.data;
     }
@@ -384,17 +387,25 @@ export const api = {
     return { success: false, transcript: '', detectedLanguage: language };
   },
 
-  async voiceTTS(text: string, language: IndianLanguage = 'en', speaker?: string): Promise<{ success: boolean; audioBase64: string | null; text: string }> {
-    const res = await safeFetchJson<{ audioBase64: string | null; text: string }>('/api/voice/tts', {
+  async voiceTTS(
+    text: string,
+    language: IndianLanguage = 'en',
+    speaker?: string
+  ): Promise<{ success: boolean; audioBase64: string | null; mimeType: string; text: string; error?: string }> {
+    // /api/voice/tts answers { success, audioBase64, mimeType, error } at the TOP level (no `data`
+    // wrapper). Reading res.data.audioBase64 here was always undefined, so Sarvam audio was never played.
+    const res = (await safeFetchJson<any>('/api/voice/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, language, speaker }),
-    }, 10000);
+    }, 20000)) as any;
 
-    if (res.success && res.data) {
-      return { success: true, audioBase64: res.data.audioBase64, text };
+    const audioBase64: string | null = res?.audioBase64 ?? res?.data?.audioBase64 ?? null;
+    const mimeType: string = res?.mimeType ?? res?.data?.mimeType ?? 'audio/mpeg';
+    if (res?.success && audioBase64) {
+      return { success: true, audioBase64, mimeType, text };
     }
-    return { success: false, audioBase64: null, text };
+    return { success: false, audioBase64: null, mimeType, text, error: res?.error || 'No audio returned' };
   },
 
   // 13. Voice Query (Sarvam AI Voice Assistant)

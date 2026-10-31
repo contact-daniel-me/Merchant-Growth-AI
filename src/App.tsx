@@ -69,6 +69,8 @@ export default function App() {
 
   // Audio state
   const [isBriefingAudioPlaying, setIsBriefingAudioPlaying] = useState(false);
+  const [isBriefingAudioLoading, setIsBriefingAudioLoading] = useState(false);
+  const [briefingAudioError, setBriefingAudioError] = useState<string | null>(null);
   const [isChimePlaying, setIsChimePlaying] = useState(false);
 
   // Loading state (starts false because initial cached state is immediately available)
@@ -114,7 +116,7 @@ export default function App() {
         api.getSettlements(merchantId),
         api.getKhata(merchantId),
         api.getGrowth(merchantId),
-        api.getBriefings(merchantId),
+        api.getBriefings(merchantId, currentLanguage),
       ]);
 
       if (merRes.status === 'fulfilled' && merRes.value) {
@@ -155,6 +157,26 @@ export default function App() {
       refreshMerchantData(currentMerchantId);
     }
   }, [currentMerchantId]);
+
+  // Re-fetch the brief when the merchant switches language, so the text and its audio match.
+  const isFirstLanguageRender = useRef(true);
+  useEffect(() => {
+    if (isFirstLanguageRender.current) {
+      isFirstLanguageRender.current = false;
+      return;
+    }
+    if (!currentMerchantId) return;
+    let cancelled = false;
+    api
+      .getBriefings(currentMerchantId, currentLanguage)
+      .then((list) => {
+        if (!cancelled && list?.length) setBriefings(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLanguage]);
 
   // Handle Switch Merchant Tenant
   const handleSelectMerchant = (merchantId: string) => {
@@ -267,62 +289,92 @@ export default function App() {
   };
 
   const briefingAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  // Incremented on every play/stop so a slow TTS response from an earlier click is ignored.
+  const briefingPlayTokenRef = useRef(0);
 
-  // Play Daily Briefing Audio with Sarvam Bulbul v4 Flash & Clean Fallback
+  const stopBriefingAudio = () => {
+    briefingPlayTokenRef.current++;
+    if (briefingAudioPlayerRef.current) {
+      briefingAudioPlayerRef.current.pause();
+      briefingAudioPlayerRef.current = null;
+    }
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    setIsBriefingAudioPlaying(false);
+    setIsBriefingAudioLoading(false);
+  };
+
+  /**
+   * "Listen to Spoken Summary": plays Sarvam Bulbul audio (pre-generated with the brief, or fetched
+   * from /api/voice/tts), and falls back to the browser's own voice only if that fails.
+   */
   const playBriefingAudio = async (text: string) => {
-    if (isBriefingAudioPlaying) {
-      if (briefingAudioPlayerRef.current) {
-        briefingAudioPlayerRef.current.pause();
-        briefingAudioPlayerRef.current = null;
-      }
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-      setIsBriefingAudioPlaying(false);
+    // Second click while preparing or playing = stop.
+    if (isBriefingAudioPlaying || isBriefingAudioLoading) {
+      stopBriefingAudio();
       return;
     }
+    if (!text?.trim()) return;
 
-    // 1. Try pre-cached Sarvam audio or call TTS endpoint
-    let base64 = latestBriefing?.audioBase64;
-    if (!base64 && text) {
-      try {
-        const res = await api.voiceTTS(text, currentLanguage);
-        if (res.success && res.audioBase64) {
-          base64 = res.audioBase64;
-        }
-      } catch (e) {
-        console.warn('Sarvam TTS fetch warning:', e);
+    stopBriefingAudio();
+    const token = briefingPlayTokenRef.current;
+    setBriefingAudioError(null);
+
+    // Created inside the click handler so mobile Safari treats later playback as user-initiated.
+    const audio = new Audio();
+    briefingAudioPlayerRef.current = audio;
+
+    // 1. Audio generated with the brief, if it matches the text and language being played.
+    const briefing: any = latestBriefing;
+    let base64: string | null =
+      briefing?.audioBase64 && briefing?.spokenAudioText === text && (!briefing.language || briefing.language === currentLanguage)
+        ? briefing.audioBase64
+        : null;
+    let mimeType = 'audio/mpeg';
+
+    // 2. Otherwise ask the server (Sarvam text-to-speech).
+    if (!base64) {
+      setIsBriefingAudioLoading(true);
+      const res = await api.voiceTTS(text, currentLanguage);
+      if (token !== briefingPlayTokenRef.current) return; // user pressed stop meanwhile
+      setIsBriefingAudioLoading(false);
+      if (res.success && res.audioBase64) {
+        base64 = res.audioBase64;
+        mimeType = res.mimeType || 'audio/mpeg';
+      } else {
+        console.warn('[Spoken summary] Sarvam TTS unavailable:', res.error);
       }
     }
 
     if (base64) {
+      audio.src = base64.startsWith('data:audio') ? base64 : `data:${mimeType};base64,${base64}`;
+      audio.onended = () => {
+        if (briefingAudioPlayerRef.current === audio) briefingAudioPlayerRef.current = null;
+        setIsBriefingAudioPlaying(false);
+      };
       try {
-        const audioUrl = base64.startsWith('data:audio') ? base64 : `data:audio/mpeg;base64,${base64}`;
-        const audio = new Audio(audioUrl);
-        briefingAudioPlayerRef.current = audio;
-        setIsBriefingAudioPlaying(true);
-
-        audio.onended = () => {
-          setIsBriefingAudioPlaying(false);
-          briefingAudioPlayerRef.current = null;
-        };
-
-        audio.onerror = () => {
-          fallbackSpeechSynthesis(text);
-        };
-
         await audio.play();
+        if (token !== briefingPlayTokenRef.current) {
+          audio.pause();
+          return;
+        }
+        setIsBriefingAudioPlaying(true);
         return;
       } catch (err) {
-        console.warn('Audio playback error, using fallback:', err);
+        console.warn('[Spoken summary] Audio element could not play, using browser voice:', err);
       }
     }
 
-    fallbackSpeechSynthesis(text);
+    if (token !== briefingPlayTokenRef.current) return;
+    briefingAudioPlayerRef.current = null;
+    fallbackSpeechSynthesis(text, token);
   };
 
-  const fallbackSpeechSynthesis = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
+  const fallbackSpeechSynthesis = (text: string, token: number) => {
+    if (!('speechSynthesis' in window)) {
+      setIsBriefingAudioPlaying(false);
+      setBriefingAudioError('Voice playback is not available in this browser.');
+      return;
+    }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     const langMap: Record<IndianLanguage, string> = {
@@ -333,13 +385,22 @@ export default function App() {
       te: 'te-IN',
     };
     utterance.lang = langMap[currentLanguage] || 'en-IN';
+    const voice = window.speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(currentLanguage));
+    if (voice) utterance.voice = voice;
     utterance.rate = 0.95;
-    utterance.pitch = 1.0;
 
-    utterance.onstart = () => setIsBriefingAudioPlaying(true);
-    utterance.onend = () => setIsBriefingAudioPlaying(false);
-    utterance.onerror = () => setIsBriefingAudioPlaying(false);
-
+    const done = () => {
+      if (token === briefingPlayTokenRef.current) setIsBriefingAudioPlaying(false);
+    };
+    utterance.onstart = () => {
+      if (token === briefingPlayTokenRef.current) setIsBriefingAudioPlaying(true);
+    };
+    utterance.onend = done;
+    utterance.onerror = () => {
+      done();
+      setBriefingAudioError('Could not play the summary. Check your volume or try again.');
+    };
+    setIsBriefingAudioPlaying(true);
     window.speechSynthesis.speak(utterance);
   };
 
@@ -412,6 +473,8 @@ export default function App() {
             onNavigateTab={setActiveTab}
             onPlayBriefingAudio={playBriefingAudio}
             isAudioPlaying={isBriefingAudioPlaying}
+            isAudioLoading={isBriefingAudioLoading}
+            audioError={briefingAudioError}
           />
         )}
 
