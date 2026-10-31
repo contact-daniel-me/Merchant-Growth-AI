@@ -52,7 +52,7 @@ export default function App() {
     merchantDB.getSettlements('mer_sharma_kirana')
   );
   const [creditRecords, setCreditRecords] = useState<CustomerCreditRecord[]>(() =>
-    merchantDB.getKhata('mer_sharma_kirana')
+    merchantDB.getCreditRecords('mer_sharma_kirana')
   );
   const [growthInsights, setGrowthInsights] = useState<GrowthInsight[]>(() =>
     merchantDB.getGrowthInsights('mer_sharma_kirana')

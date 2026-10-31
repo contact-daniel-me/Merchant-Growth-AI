@@ -840,6 +840,10 @@ class InMemoryMerchantDB {
     return this.creditRecords.get(merchantId) || [];
   }
 
+  getKhata(merchantId: string): CustomerCreditRecord[] {
+    return this.getCreditRecords(merchantId);
+  }
+
   addCreditRecord(merchantId: string, record: CustomerCreditRecord): CustomerCreditRecord {
     this.ensureTenant(merchantId);
     const list = this.creditRecords.get(merchantId) || [];

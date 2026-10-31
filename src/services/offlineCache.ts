@@ -34,6 +34,19 @@ export class OfflineCacheService {
     }
   }
 
+  public static saveOfflineBriefing(merchantId: string, briefing: DailyBriefing) {
+    this.saveBrief(merchantId, briefing);
+  }
+
+  /**
+   * Returns human-readable freshness badge text for cached data, or null
+   */
+  public static getFreshnessBadgeText(merchantId: string): string | null {
+    const cached = this.getCachedBrief(merchantId);
+    if (!cached) return null;
+    return `Cached at ${cached.cachedAtDisplay}`;
+  }
+
   /**
    * Retrieves cached brief when network drops
    */
